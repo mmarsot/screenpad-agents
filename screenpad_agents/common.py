@@ -13,6 +13,8 @@ APP = "agents"
 FLEET_TILE = "agents"
 CALLS_TILE = "calls"
 PAGE = "agents"
+RUNS_TILE = "runs"
+RUNS_PAGE = "runs"
 
 CONFIG = ("screenpad", "agents.toml")
 # What the config error points to: install.sh installs no docs.
@@ -28,6 +30,14 @@ FIRSTMATE_POLL = 60.0
 FIRSTMATE_POLL_RANGE = (60.0, 3600.0)
 FIRSTMATE_TIMEOUT = 30.0
 BEARINGS_SCHEMA = "fm-bearings.v1"
+# The Runs page reads no-mistakes (each call about 30 ms) every RUNS_POLL
+# seconds while a run is active, every RUNS_IDLE seconds while none is, and
+# not at all while the touch bar is not connected.
+RUNS_POLL = 20.0
+RUNS_POLL_RANGE = (10.0, 300.0)
+RUNS_IDLE = 120.0
+RUNS_IDLE_RANGE = (30.0, 3600.0)
+NO_MISTAKES_TIMEOUT = 15.0
 # Waiting for the touch bar's daemon when it is not running.
 RECONNECT = 5.0
 
@@ -62,6 +72,12 @@ class AgentsError(Exception):
 
 class ConfigError(AgentsError):
     pass
+
+
+def why(error, expected):
+    """What to show and log for an error a worker caught: an expected one
+    says why itself; any other is a bug, named by its type."""
+    return str(error) if isinstance(error, expected) else "%s: %s" % (type(error).__name__, error)
 
 
 def socket_path():

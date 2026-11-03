@@ -8,7 +8,9 @@ prints the fm-bearings.v1 model. The Captain's Calls waiting are
 len(decisions_open) + len(contributions.captain); "endpoints" gives each
 task's recorded endpoint, for Herdr "<session>:<pane id>", which joins a task
 to the agent Herdr reports in that pane. "in_flight" gives the task's name
-and what it is doing. The reader takes about 3 s; app.py runs it off the
+and what it is doing. With the Runs page discovering firstmate's projects,
+the reader is asked for "endpoints,paths": "paths" gives each live task's
+worktree, the repo copy its no-mistakes runs are made in. The reader takes about 3 s; app.py runs it off the
 loop, at most once a minute plus on demand.
 
 Interrupting a task's agent goes through firstmate's control plane, which
@@ -109,18 +111,20 @@ class Task:
 
 class Bearings:
     """What one read gave: the Captain's Calls waiting (more when the reader
-    left some out), and the tasks by endpoint target."""
+    left some out), the tasks by endpoint target, and the live tasks'
+    worktrees by task id (when the reader was asked for paths)."""
 
-    __slots__ = ("calls", "more", "tasks")
+    __slots__ = ("calls", "more", "tasks", "worktrees")
 
-    def __init__(self, calls, more, tasks):
-        self.calls, self.more, self.tasks = calls, more, tasks
+    def __init__(self, calls, more, tasks, worktrees=None):
+        self.calls, self.more, self.tasks, self.worktrees = calls, more, tasks, worktrees or {}
 
     def __eq__(self, other):
-        return isinstance(other, Bearings) and (self.calls, self.more, self.tasks) == (
+        return isinstance(other, Bearings) and (self.calls, self.more, self.tasks, self.worktrees) == (
             other.calls,
             other.more,
             other.tasks,
+            other.worktrees,
         )
 
     def __hash__(self):
@@ -140,14 +144,16 @@ class Firstmate:
         lavish=("lavish-axi",),
         opener=OPENER,
         scope=SCOPE,
+        paths=False,
     ):
         self.home, self.bearings, self.control, self._run, self.timeout = home, bearings, control, run, timeout
         self.board, self.inbox, self.lavish, self.opener = board, inbox, list(lavish), list(opener)
         self.scope = list(scope)
+        self.fields = "endpoints,paths" if paths else "endpoints"
 
     def read(self):
         """The Bearings now; FirstmateError when the reader fails."""
-        done = self._call([self.bearings, "--json", "--fields", "endpoints"], "firstmate's reader", self.timeout)
+        done = self._call([self.bearings, "--json", "--fields", self.fields], "firstmate's reader", self.timeout)
         try:
             model = json.loads(done.stdout)
         except ValueError:
@@ -261,7 +267,12 @@ def parse(model):
             continue
         flight = flights.get(task_id, {})
         tasks[target] = Task(task_id, _text(flight.get("name")), _text(flight.get("doing")))
-    return Bearings(len(decisions) + len(captain), more, tasks)
+    worktrees = {}
+    for p in _list(model, "paths"):
+        if isinstance(p, dict) and isinstance(p.get("id"), str) and isinstance(p.get("worktree"), str):
+            if os.path.isabs(p["worktree"]):
+                worktrees[p["id"]] = p["worktree"]
+    return Bearings(len(decisions) + len(captain), more, tasks, worktrees)
 
 
 def listed_url(listing, path):

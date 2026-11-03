@@ -19,13 +19,32 @@ ConfigError naming it.
   poll = 60                    # seconds, at least 60
   lavish = "lavish-axi"        # or a list: the program that lists Lavish's
                                # sessions, where the decisions board is open
+
+  [runs]                       # optional: the Runs page (no-mistakes runs)
+  repos = ["/path/to/repo"]    # repo directories to watch
+  firstmate = true             # also firstmate's projects and task copies
+                               # (only with [firstmate]; true by default)
+  command = "no-mistakes"      # or a list: a wrapper and its arguments
+  poll = 20                    # seconds between reads while a run is active
+  idle = 120                   # seconds between reads while none is
 """
 
 import os
 import re
 import tomllib
 
-from .common import DOCS, FIRSTMATE_POLL, FIRSTMATE_POLL_RANGE, HERDR_POLL, HERDR_POLL_RANGE, ConfigError
+from .common import (
+    DOCS,
+    FIRSTMATE_POLL,
+    FIRSTMATE_POLL_RANGE,
+    HERDR_POLL,
+    HERDR_POLL_RANGE,
+    RUNS_IDLE,
+    RUNS_IDLE_RANGE,
+    RUNS_POLL,
+    RUNS_POLL_RANGE,
+    ConfigError,
+)
 
 SESSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 BEARINGS = os.path.join("bin", "fm-bearings-snapshot.sh")
@@ -51,6 +70,7 @@ class Config:
         "inbox",
         "lavish",
         "path",
+        "runs",
         "session",
     )
 
@@ -60,6 +80,19 @@ class Config:
         self.path, self.herdr, self.session, self.herdr_poll = path, herdr, session, herdr_poll
         self.home, self.bearings, self.firstmate_poll, self.control = home, bearings, firstmate_poll, control
         self.board, self.inbox, self.lavish = None, None, list(LAVISH)
+        self.runs = None
+
+
+class Runs:
+    """[runs]: the repo directories to watch, whether firstmate's projects
+    and task copies are watched too, no-mistakes' command and the two
+    intervals."""
+
+    __slots__ = ("command", "firstmate", "idle", "poll", "repos")
+
+    def __init__(self, repos=(), firstmate=False, command=("no-mistakes",), poll=RUNS_POLL, idle=RUNS_IDLE):
+        self.repos, self.firstmate, self.command = list(repos), firstmate, list(command)
+        self.poll, self.idle = poll, idle
 
 
 def load(path):
@@ -77,7 +110,7 @@ def load(path):
 
 
 def parse(path, data):
-    _known(path, data, {"herdr", "firstmate"}, "table")
+    _known(path, data, {"herdr", "firstmate", "runs"}, "table")
     herdr = _table(path, data, "herdr")
     if herdr is None:
         raise ConfigError("%s: [herdr] is required, with at least its session" % path)
@@ -102,7 +135,32 @@ def parse(path, data):
             if not os.access(os.path.join(code, script), os.X_OK):
                 raise ConfigError("%s: [firstmate] code has no executable %s" % (path, script))
         config.firstmate_poll = _seconds(path, fm, "firstmate", FIRSTMATE_POLL, FIRSTMATE_POLL_RANGE)
+    runs = _table(path, data, "runs")
+    if runs is not None:
+        config.runs = _runs(path, runs, config.home is not None)
     return config
+
+
+def _runs(path, table, firstmate):
+    _known(path, table, {"repos", "firstmate", "command", "poll", "idle"}, "key in [runs]")
+    repos = table.get("repos", [])
+    if not isinstance(repos, list) or not all(isinstance(r, str) and os.path.isabs(r) for r in repos):
+        raise ConfigError("%s: [runs] repos must be a list of absolute paths" % path)
+    for r in repos:
+        if not os.path.isdir(r):
+            raise ConfigError("%s: [runs] repos: %s is not a directory" % (path, r))
+    discover = table.get("firstmate", True)
+    if not isinstance(discover, bool):
+        raise ConfigError("%s: [runs] firstmate must be true or false" % path)
+    discover = discover and firstmate
+    if not repos and not discover:
+        raise ConfigError("%s: [runs] has no repos, and no [firstmate] to find projects in" % path)
+    command = _command(path, table.get("command", "no-mistakes"), "[runs] command", "no-mistakes")
+    poll = _seconds(path, table, "runs", RUNS_POLL, RUNS_POLL_RANGE)
+    idle = _seconds(path, table, "runs", RUNS_IDLE, RUNS_IDLE_RANGE, key="idle")
+    if idle < poll:
+        raise ConfigError("%s: [runs] idle must be at least its poll" % path)
+    return Runs(list(dict.fromkeys(os.path.normpath(r) for r in repos)), discover, command, poll, idle)
 
 
 def _known(path, table, allowed, what):
@@ -125,11 +183,11 @@ def _command(path, value, key, example):
     return list(words)
 
 
-def _seconds(path, table, name, default, bounds):
-    value = table.get("poll", default)
+def _seconds(path, table, name, default, bounds, key="poll"):
+    value = table.get(key, default)
     low, high = bounds
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
-        raise ConfigError("%s: [%s] poll must be %g to %g seconds" % (path, name, low, high))
+        raise ConfigError("%s: [%s] %s must be %g to %g seconds" % (path, name, key, low, high))
     return float(value)
 
 

@@ -155,6 +155,21 @@ class FirstmateTests(unittest.TestCase):
         ]
         self.assertEqual(parse(model).tasks, {})
 
+    def test_task_worktrees_when_the_runs_page_asks_for_paths(self):
+        model = bearings_model()
+        model["paths"] = [
+            {"id": "fix-api", "worktree": "/pool/1/api", "home": "-"},
+            {"id": "rel", "worktree": "pool/2"},
+            {"id": 4, "worktree": "/pool/3"},
+            "junk",
+        ]
+        self.model(model)
+        fm = Firstmate(self.home, self.script, self.control, paths=True)
+        self.assertEqual(fm.read().worktrees, {"fix-api": "/pool/1/api"})
+        calls = read_calls(os.path.join(self.code, "bin", "calls.jsonl"))
+        self.assertEqual(calls[-1]["args"], ["--json", "--fields", "endpoints,paths"])
+        self.assertEqual(parse(bearings_model()).worktrees, {})
+
     def test_interrupt_runs_the_control_plane_on_the_configured_home_only(self):
         fm = self.reader
         with mock.patch.dict(os.environ, {"FM_HOME": "/home/me/firstmate", "FM_BACKEND": "herdr"}):

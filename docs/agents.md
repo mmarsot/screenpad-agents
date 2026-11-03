@@ -7,6 +7,7 @@
 - **how many Captain's Calls are waiting** in firstmate: decisions and contributions that need you. Tapping the count opens [firstmate's decisions board](#captains-call-and-the-decisions-board) in your browser, on the main screen, where you answer them.
 - **an agent's card**, when you tap it: the agent's own screen, Focus and Interrupt, and when it waits on a Claude Code permission dialog, the answers: Allow once, Always and Deny.
 - two **tiles for the bar**, if you give them spots: `agents` (how many agents, how many blocked) and `calls` (the Captain's Call count).
+- optionally, with `[runs]` in its config, a second page, **[Runs](runs.md)**: your projects' no-mistakes runs and their status, each joined to its agent and task, with a warning when one agent has more than one active run, and a `runs` tile.
 
 ![The Agents page: Captain's Call with 2 waiting, then fix-login-redirect blocked in amber, web-dark-mode and docs-install-guide working in green, and dotfiles idle in grey; the bar above shows the agents tile (4 agents, 1 blocked) and the calls tile (2 waiting)](images/agents-page.png)
 
@@ -78,6 +79,7 @@ To turn it off: `systemctl --user disable --now screenpad-agents`. Removing the 
 | `[firstmate] code` | the firstmate checkout, an absolute path; it must have an executable `bin/fm-bearings-snapshot.sh` and `bin/fm-control.sh`. Captain's Call also uses its `bin/fm-bearings-board.sh` and `bin/fm-inbox.sh`, checked when you tap |
 | `[firstmate] poll` | seconds between two reads of firstmate, 60 to 3600, default 60 |
 | `[firstmate] lavish` | the program that lists Lavish's sessions, to find the decisions board open: `"lavish-axi"` by default; or a list of words, such as a `node` and the script |
+| `[runs]` | optional: the [Runs page](runs.md#turning-it-on) and its settings (`repos`, `firstmate`, `command`, `poll`, `idle`). Without it no-mistakes is never run |
 
 ## The Agents page
 
@@ -152,7 +154,8 @@ A dialog that matches none of this, or one that must never be answered with a ke
   ```
 
   It takes about 3 s, and runs at most once a minute plus when you tap Captain's Call. That tap also runs `FM_HOME=<home> <code>/bin/fm-bearings-board.sh path` and `lavish-axi`, and `gio open` with the board's URL in a scope of its own (`systemd-run --user --scope`, outside the app's unit), and **Open decisions board** on its card runs `FM_HOME=<home> <code>/bin/fm-inbox.sh note --json --request-id <id> -- <text>`, [above](#captains-call-and-the-decisions-board), in the thread of firstmate's control. Interrupting a task's agent runs `FM_HOME=<home> <code>/bin/fm-control.sh <task> interrupt` in a thread of its own; it and that note are the only firstmate commands the app runs that act on anything (`fm-bearings-board.sh` runs only as `path`; the app never builds or arms a board). The count is the number of open decisions plus the captain's contributions (`decisions_open` and `contributions.captain` in its `fm-bearings.v1` output), shown with a `+` when the reader left some out. Each task's endpoint, `<session>:<pane id>` for Herdr, joins the task to the agent Herdr reports in that pane. The app passes firstmate's commands only `FM_HOME`, none of the other `FM_*` variables of its own environment, and `lavish-axi`, `systemd-run` and `gio` no `FM_*` variable at all.
-- **The touch bar:** the socket in `$XDG_RUNTIME_DIR/screenpad/touchbar.sock`, as app `agents` with tiles `agents` and `calls` (only `agents` without firstmate) and page `agents`. It talks to it through the [client library](https://github.com/mmarsot/screenpad-linux/blob/main/docs/app-api.md#the-python-client-library) `screenpad_app`, speaking app protocol 2: it sends a page or tile only when it changed, and connects again every 5 s while the daemon is not running or refuses its protocol version (a touch bar too old for it, logged once with what to update).
+- **no-mistakes**, with `[runs]`: only its read-only `axi`, `axi status` and `axi rounds` commands, [on the Runs page](runs.md#how-it-reads); with `[runs] firstmate`, firstmate's reader is asked for `--fields endpoints,paths`, for its tasks' worktrees.
+- **The touch bar:** the socket in `$XDG_RUNTIME_DIR/screenpad/touchbar.sock`, as app `agents` with tiles `agents` and `calls` (only `agents` without firstmate), and `runs` with `[runs]`, and page `agents` (and `runs`). It talks to it through the [client library](https://github.com/mmarsot/screenpad-linux/blob/main/docs/app-api.md#the-python-client-library) `screenpad_app`, speaking app protocol 2: it sends a page or tile only when it changed, and connects again every 5 s while the daemon is not running or refuses its protocol version (a touch bar too old for it, logged once with what to update).
 
 ## Troubleshooting
 
