@@ -48,6 +48,8 @@ It installs, under your home:
 
 Then write the config and turn it on: [Turning it on](docs/agents.md#turning-it-on).
 
+If you installed screenpad-linux with its own copy of this app (`/usr/local/bin/screenpad-agents` and `/usr/lib/systemd/user/screenpad-agents.service`, still installed until screenpad-linux drops it), this install shadows it: the units share a name and the one under your home takes precedence. Which command runs depends on your `PATH`; `command -v screenpad-agents` should print `~/.local/bin/screenpad-agents`.
+
 To update, pull and run `./install.sh` again: it replaces the program whole and keeps your config. If the app is running, `systemctl --user restart screenpad-agents` then runs the new version.
 
 ## Uninstall
@@ -57,6 +59,8 @@ To update, pull and run `./install.sh` again: it replaces the program whole and 
 ```
 
 It stops and disables the unit if you enabled it, and removes the three paths above. Your config, `~/.config/screenpad/agents.toml`, is kept; delete it by hand if you no longer want it. The touch bar itself is screenpad-linux's and is left as it is.
+
+If screenpad-linux installed its own copy of the app, uninstalling this one brings that copy back: its unit `screenpad-agents.service` and its command `/usr/local/bin/screenpad-agents` are then the ones in use.
 
 ## Troubleshooting
 
