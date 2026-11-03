@@ -26,11 +26,13 @@ decisions board in the browser on the main screen, or, when no board is
 open, asks a question in the bar saying so, whose Open decisions board asks
 firstmate to build it: one note in its inbox, then none again until the board
 is seen open or BOARD_REQUEST_HOLD has passed (the panel answers no Captain's
-Call).
+Call). Each request has its own id, kept after a failed note, so trying again
+replays a note fm-inbox.sh may have saved rather than queueing a second.
 """
 
 import os
 import queue
+import secrets
 import select
 import sys
 import threading
@@ -75,6 +77,7 @@ class App:
         self._asked = None
         self._asks = 0
         self._requested = None  # when the app last asked firstmate for the board
+        self._request_id = None  # the id of the request a retry repeats
 
     # --- the worker threads ------------------------------------------------
 
@@ -167,7 +170,7 @@ class App:
                 continue
             if job[0] == "request":
                 try:
-                    self._post("requested", self.firstmate.request_board(), None)
+                    self._post("requested", self.firstmate.request_board(job[1]), None)
                 except Exception as e:
                     self._post("requested", None, _why(e, FirstmateError))
                 continue
@@ -259,7 +262,7 @@ class App:
     def _board(self, url, error):
         self._opening = False
         if url is not None:
-            self._requested = None  # the board is there: a later request asks again
+            self._requested = self._request_id = None  # the board is there: a later request asks again
             self.log("opened the decisions board: %s" % url)
         elif error is not None:
             self.log("the decisions board did not open: %s" % error)
@@ -285,13 +288,15 @@ class App:
         if self._request_pending():
             self._ask("Decisions board requested", REQUESTED)
             return
+        if self._request_id is None or self._requested is not None:
+            self._request_id = "screenpad-board-%d-%s" % (time.time(), secrets.token_hex(4))
         self._requested = self.clock()
-        self._control.put(("request",))
+        self._control.put(("request", self._request_id))
 
     def _board_requested(self, note, error):
         if error is not None:
-            self._requested = None  # nothing was asked: the next try asks again
-            self.log("firstmate was not asked for the decisions board: %s" % error)
+            self._requested = None  # the next try repeats this request, under its id
+            self.log("the request for the decisions board failed: %s" % error)
             self._ask("Decisions board not requested", error)
             return
         self.log("asked firstmate for the decisions board: %s" % note)

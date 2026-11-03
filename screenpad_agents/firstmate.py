@@ -30,9 +30,12 @@ a loopback http one, is handed to the desktop's URL handler (gio open). With
 no session open nothing is built or armed from here: firstmate composes the
 board. The panel can ask it to, with one note in firstmate's inbox,
 
-  FM_HOME=<home> <code>/bin/fm-inbox.sh note -- <BOARD_REQUEST>
+  FM_HOME=<home> <code>/bin/fm-inbox.sh note --request-id <id> -- <BOARD_REQUEST>
 
 which wakes firstmate once; it then builds the board, and Lavish opens it.
+The app keeps one request id per request, so a retry after a failure (the
+note perhaps saved, firstmate not woken) replays that note rather than
+queueing a second one.
 """
 
 import json
@@ -162,13 +165,15 @@ class Firstmate:
             self._call(self.opener + [url], "opening the board", OPEN_TIMEOUT, home=False, detach=True)
         return url
 
-    def request_board(self):
+    def request_board(self, request_id):
         """Ask firstmate to build and open its decisions board, with one note
-        in its inbox (one wake): what fm-inbox.sh reported, as "queued <id>",
-        or FirstmateError when it refused or failed."""
+        in its inbox (one wake) under request_id: what fm-inbox.sh reported,
+        "queued <id>", or "replay <id>" for a request_id it already has, or
+        FirstmateError when it refused or failed."""
         if not self.inbox or not os.access(self.inbox, os.X_OK):
             raise FirstmateError("firstmate has no bin/fm-inbox.sh")
-        done = self._call([self.inbox, "note", "--", BOARD_REQUEST], "fm-inbox.sh note", INBOX_TIMEOUT)
+        argv = [self.inbox, "note", "--request-id", request_id, "--", BOARD_REQUEST]
+        done = self._call(argv, "fm-inbox.sh note", INBOX_TIMEOUT)
         out = (done.stdout or "").strip().splitlines()
         return out[0].strip() if out else "queued"
 

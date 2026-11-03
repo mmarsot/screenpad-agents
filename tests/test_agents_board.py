@@ -148,24 +148,29 @@ class BoardTests(unittest.TestCase):
 
     def test_the_board_is_asked_for_with_one_inbox_note(self):
         with mock.patch.dict(os.environ, {"FM_HOME": "/home/me/firstmate", "FM_BACKEND": "herdr"}):
-            self.assertEqual(self.fm.request_board(), "queued 1793706159-abc123")
-        # One note on the configured home only, its text after --, and
-        # nothing else: no board built, no Lavish, no opener.
+            self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "queued 1793706159-abc123")
+        # One note on the configured home only, under its request id, its
+        # text after --, and nothing else: no board built, no Lavish, no opener.
         calls = read_calls(os.path.join(self.code, "bin", "inbox.jsonl"))
-        self.assertEqual(calls, [{"FM_HOME": self.home, "fm": ["FM_HOME"], "args": ["note", "--", BOARD_REQUEST]}])
+        args = ["note", "--request-id", "screenpad-board-1-ab", "--", BOARD_REQUEST]
+        self.assertEqual(calls, [{"FM_HOME": self.home, "fm": ["FM_HOME"], "args": args}])
         self.assertIn("/bearings lavish", BOARD_REQUEST)
         self.assertEqual(read_calls(os.path.join(self.code, "bin", "board.jsonl")), [])
         self.assertEqual((read_calls(os.path.join(self.dir, "lavish.jsonl")), self.opened()), ([], []))
 
-    def test_a_refused_request_says_why(self):
-        open(os.path.join(self.code, "bin", "inbox.fail"), "w").close()
-        with self.assertRaisesRegex(FirstmateError, "fm-inbox.sh note failed: fm-inbox: refusing"):
-            self.fm.request_board()
+    def test_a_refused_request_says_why_and_a_retry_replays_it(self):
+        fail = os.path.join(self.code, "bin", "inbox.fail")
+        open(fail, "w").close()
+        with self.assertRaisesRegex(FirstmateError, "fm-inbox.sh note failed: fm-inbox: saved, but firstmate was not"):
+            self.fm.request_board("screenpad-board-1-ab")
+        # The same request id again is fm-inbox.sh's replay, not a new note.
+        os.remove(fail)
+        self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "replay 1793706159-abc123")
         os.remove(os.path.join(self.code, "bin", "fm-inbox.sh"))
         with self.assertRaisesRegex(FirstmateError, "firstmate has no bin/fm-inbox.sh"):
-            self.fm.request_board()
+            self.fm.request_board("screenpad-board-1-ab")
         with self.assertRaisesRegex(FirstmateError, "firstmate has no bin/fm-inbox.sh"):
-            Firstmate(self.home, "r", "c").request_board()
+            Firstmate(self.home, "r", "c").request_board("screenpad-board-1-ab")
 
     def test_a_board_path_that_is_not_one_is_refused(self):
         for out in ("", "relative/board.html\n", "/a\n/b\n"):
@@ -271,7 +276,7 @@ class BoardTapTests(unittest.TestCase):
         self.firstmate.board = None
         rig.apps.asks.choose(self.no_board_card(rig), 0)
         rig.until(lambda: self.firstmate.requests == 1)
-        # Past the hold, the card offers to ask again.
+        # Past the hold, the card offers to ask again, as a new request.
         rig.app._requested -= BOARD_REQUEST_HOLD
         rig.apps.asks.choose(self.no_board_card(rig), 0)
         rig.until(lambda: self.firstmate.requests == 2)
@@ -283,6 +288,10 @@ class BoardTapTests(unittest.TestCase):
         self.firstmate.board = None
         rig.apps.asks.choose(self.no_board_card(rig), 0)
         rig.until(lambda: self.firstmate.requests == 3)
+        ids = self.firstmate.request_ids
+        self.assertEqual(len(set(ids)), 3)
+        for rid in ids:
+            self.assertRegex(rid, r"\A[A-Za-z0-9._:-]{1,128}\Z")
 
     def test_a_failed_request_is_shown_and_can_be_tried_again(self):
         rig = self.rig()
@@ -291,11 +300,14 @@ class BoardTapTests(unittest.TestCase):
         rig.apps.asks.choose(self.no_board_card(rig), 0)
         failed = ("Decisions board not requested", "fm-inbox.sh note failed: exit 1", ["OK"])
         rig.until(lambda: self.asked(rig) == [failed])
-        self.assertIn("firstmate was not asked for the decisions board: fm-inbox.sh note failed: exit 1", rig.logged)
+        self.assertIn("the request for the decisions board failed: fm-inbox.sh note failed: exit 1", rig.logged)
         self.firstmate.request_error = None
         rig.apps.asks.choose(self.no_board_card(rig), 0)
         rig.until(lambda: self.asked(rig) == [REQUESTED_CARD])
-        self.assertEqual(self.firstmate.requests, 2)
+        # The retry repeats the same request, so fm-inbox.sh replays a note
+        # it saved before failing instead of queueing a second one.
+        ids = self.firstmate.request_ids
+        self.assertEqual((len(ids), ids[0]), (2, ids[1]))
 
     def test_a_failure_is_shown_on_the_card(self):
         rig = self.rig()
