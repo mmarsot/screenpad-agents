@@ -18,9 +18,10 @@ seconds while none is, at once when a card opens, and not at all while the
 touch bar is not connected (nothing would show it). The loop tells it the
 copies to look in when Herdr's agents or firstmate's tasks change.
 
-It also opens a run's pull request, on Open PR on the run's card: the URL no-mistakes gave (runs.View.pr_url), with the desktop's URL
-handler in a scope of its own (desktop.py), the one command here that acts;
-it reads nothing more for it.
+It also opens a run's pull request, on Open PR on the run's card: the URL
+no-mistakes gave (runs.View.pr_url), with the desktop's URL handler in a
+scope of its own (desktop.py), the one command here that acts; it reads
+nothing more for it.
 """
 
 import os
