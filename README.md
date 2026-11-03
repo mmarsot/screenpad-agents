@@ -60,7 +60,7 @@ To update, pull and run `./install.sh` again: it replaces the program whole and 
 
 It stops and disables the unit if you enabled it, and removes the three paths above. Your config, `~/.config/screenpad/agents.toml`, is kept; delete it by hand if you no longer want it. The touch bar itself is screenpad-linux's and is left as it is.
 
-If screenpad-linux installed its own copy of the app, uninstalling this one brings that copy back: its unit `screenpad-agents.service` and its command `/usr/local/bin/screenpad-agents` are then the ones in use.
+If screenpad-linux installed its own copy of the app, uninstalling this one brings that copy back: its unit `screenpad-agents.service` and its command `/usr/local/bin/screenpad-agents` are then the ones systemd and your `PATH` find, but the unit is left disabled; run `systemctl --user enable --now screenpad-agents` to run it again.
 
 ## Troubleshooting
 
