@@ -249,12 +249,8 @@ class RunsPageTests(unittest.TestCase):
             with self.subTest(status=r.status, pr=r.pr):
                 b = self.board([(API, [r])], details=[d] if d else [])
                 cell = self.cells(b, f)[rid(2)]
-                if shown:
-                    self.assertEqual(cell.touch, "long")  # a long press opens the PR too
-                    self.assertTrue(cell.look["text"].endswith("PR #12 · hold: open"), cell.look["text"])
-                else:
-                    self.assertEqual(cell.touch, "tap")
-                    self.assertNotIn("hold", cell.look["text"])
+                self.assertEqual(cell.touch, "tap")
+                self.assertNotIn("hold", cell.look["text"])
                 self.assertEqual(b.pr_of(f, run_id(2)), shown)
                 b.open_card(run_id(2))
                 cells = self.cells(b, f)

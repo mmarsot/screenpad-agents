@@ -1,6 +1,6 @@
 """The Runs page in the loop, against the stand-in touch bar's socket server:
 its page and tile, a tap opening a run's card and its Focus focusing the
-run's agent, Open PR and a long press opening a run's pull request (with a
+run's agent, Open PR on its card opening a run's pull request (with a
 stand-in opener: nothing opens on the screen), the runs tile, how often no-mistakes is read (only while the
 touch bar is connected, faster while a run is active), its failures, and
 `show`. no-mistakes, Herdr and firstmate are fakes."""
@@ -86,7 +86,7 @@ class RunsLoopTests(unittest.TestCase):
         self.assertEqual(self.herdr.sent, [])
         self.assertEqual({c[0] for c in self.nm.calls}, {"listing", "current", "detail", "findings"})
 
-    def test_open_pr_and_a_long_press_open_the_runs_pull_request(self):
+    def test_open_pr_on_the_card_opens_the_runs_pull_request(self):
         url = "https://github.com/o/r/pull/12"
         self.nm.runs = {API: [run(2, "fm/fix", "running", url), run(1, "fm/old", "completed")]}
         self.nm.details[run_id(2)] = detail(2, "fm/fix", at="ci")
@@ -97,12 +97,16 @@ class RunsLoopTests(unittest.TestCase):
             found = [w for w in rig.apps.pages["runs"].widgets if w.id == wid]
             return found[0].look if found else {}
 
-        rig.until(lambda: widget(widget_id("run.", run_id(2))).get("text", "").endswith("hold: open"))
-        rig.apps.press(client, "runs", widget_id("run.", run_id(1)), "long")  # no PR: nothing
+        rig.until(lambda: widget(widget_id("run.", run_id(2))).get("text", "").endswith("PR #12"))
+        # A long press on a run's cell, with a PR or without, does nothing.
+        for n in (1, 2):
+            rig.apps.press(client, "runs", widget_id("run.", run_id(n)), "long")
         rig.turn(3)
-        self.assertEqual((self.opened, widget(runcard.PR)), ([], {}))
-        # A long press on the run opens its card and the PR.
-        rig.apps.press(client, "runs", widget_id("run.", run_id(2)), "long")
+        self.assertEqual((self.opened, widget(runcard.PR), widget(runcard.LINES)), ([], {}, {}))
+        # A tap opens the card; Open PR on it opens the PR.
+        rig.apps.press(client, "runs", widget_id("run.", run_id(2)), "tap")
+        rig.until(lambda: widget(runcard.PR).get("label") == "Open PR #12")
+        rig.apps.press(client, "runs", runcard.PR, "tap")
         rig.until(lambda: widget(runcard.PR).get("label") == "PR #12 opened")
         self.assertEqual(self.opened, [url])
         self.assertIn("opened PR %s" % url, rig.logged)

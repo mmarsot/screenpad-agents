@@ -10,8 +10,7 @@ there) is of the run's branch, a copy to the Herdr agent whose cwd it is
 and to the firstmate task whose worktree it is. More than one active run
 for one agent, one repo copy or one branch is the warning: its project's
 widget turns red. Tapping a run opens its card (runcard.py) in place of the
-grid; a run with a pull request takes a long press too, which opens its card
-and the pull request (runwatch.py). Nothing here acts on a run.
+grid. Nothing here acts on a run.
 """
 
 import hashlib
@@ -28,8 +27,6 @@ from .nomistakes import pr_url
 COLUMNS = 5
 MIN_ROWS = 2
 RUN_CELLS = COLUMNS - 1
-# What a run cell with a pull request adds to its text: a long press opens it.
-HOLD = "hold: open"
 
 
 class Project:
@@ -401,8 +398,6 @@ class Runs:
             self._runs[wid] = v.run.id
             cell = {"id": wid, "col": col, "row": row, "label": clip(v.name(), MAX_LABEL), "tone": v.tone()}
             cell["text"] = clip(v.phrase(), MAX_TEXT)
-            if v.pr_url():
-                cell.update({"text": clip(v.phrase() + " · " + HOLD, MAX_TEXT), "touch": "long"})
             if v.duplicate:
                 cell["badge"] = "2+"
             cells.append(cell)

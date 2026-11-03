@@ -18,8 +18,7 @@ seconds while none is, at once when a card opens, and not at all while the
 touch bar is not connected (nothing would show it). The loop tells it the
 copies to look in when Herdr's agents or firstmate's tasks change.
 
-It also opens a run's pull request, on Open PR or a long press on the run's
-cell: the URL no-mistakes gave (runs.View.pr_url), with the desktop's URL
+It also opens a run's pull request, on Open PR on the run's card: the URL no-mistakes gave (runs.View.pr_url), with the desktop's URL
 handler in a scope of its own (desktop.py), the one command here that acts;
 it reads nothing more for it.
 """
@@ -202,12 +201,12 @@ class RunsWatch:
 
     def touch(self, widget, touch, fleet):
         """A touch on the Runs page: (the page changed, a pane to focus).
-        A tap on a run opens its card; a long press on a run with a pull
-        request opens its card and the pull request."""
+        A tap on a run opens its card; Open PR on the card opens its pull
+        request."""
+        if touch != "tap":
+            return False, None
         board = self.board
         if board.card is not None:
-            if touch != "tap":
-                return False, None
             if widget == BACK:
                 board.close_card()
                 self._jobs.put(("watch", None))
@@ -216,16 +215,10 @@ class RunsWatch:
                 return self._open_pr(fleet), None
             return False, board.card_pane(fleet) if widget == FOCUS else None
         run_id = board.run_of(widget)
-        if run_id is None or touch not in ("tap", "long"):
-            return False, None
-        if touch == "long" and board.pr_of(fleet, run_id) is None:
-            return False, None
-        if board.open_card(run_id) is None:
-            return False, None
-        if touch == "long":
-            self._open_pr(fleet)  # first, so the browser does not wait on the card's read
-        self._jobs.put(("watch", run_id))
-        return True, None
+        if run_id is not None and board.open_card(run_id) is not None:
+            self._jobs.put(("watch", run_id))
+            return True, None
+        return False, None
 
     def _open_pr(self, fleet):
         """Open the open card's pull request, unless an open is on its way:

@@ -6,10 +6,9 @@ With a `[runs]` table in its config, the [agent app](agents.md) adds a second pa
 - **each run joined to its agent and its firstmate task**: a run shows under the task's name when it is one, otherwise under its branch, with what it is doing (`running · review`, `waiting on you · review`, `failed · push`, `passed · PR #12`);
 - **a warning** when one agent, one repo copy or one branch has more than one active run: normally there is at most one per agent. The project's widget turns red and says so, and the runs involved carry a `2+` badge;
 - **a run's card** when you tap it: its steps, findings and how it ended, **Focus** to its agent's pane, and **Open PR** once the run has opened a pull request;
-- **its pull request in one touch**: hold a run that has one (its cell ends in `PR #12 · hold: open`) to open its card and the pull request in your browser on the main screen;
 - an optional **`runs` tile** for the bar: a lighthouse, with how many runs need you (the home page's list adds how many are active). The Runs page has the lighthouse too, in the home page's list; see [its icons](agents.md#its-icons).
 
-![The Runs page: api with 1 active and 1 needing you, then fix-login-redirect running at ci with PR #14 in green, fm/docs-install passed with PR #12 in grey and fm/rate-limit failed with PR #11 in red, each ending in hold: open; below, web with web-dark-mode waiting on you at review in amber and fm/footer passed with PR #30](images/runs-page.png)
+![The Runs page: api with 1 active and 1 needing you, then fix-login-redirect running at ci with PR #14 in green, fm/docs-install passed with PR #12 in grey and fm/rate-limit failed with PR #11 in red; below, web with web-dark-mode waiting on you at review in amber and fm/footer passed with PR #30](images/runs-page.png)
 
 *The Runs page with two projects, under a bar 208 px high. Rendered by the touch bar's extension in a headless GNOME Shell 50.1, from the app's own page fed to the daemon's own code, with stand-in runs, agents and tasks.*
 
@@ -88,7 +87,7 @@ Tapping a run opens its card in place of the grid, until **Back** or the run lea
 
 *The card of a run watching CI, opened from the Runs page. Rendered like the page above.*
 
-Once no-mistakes has opened the run's pull request (from its `pr` step on: while it watches CI, and after the run passed or failed), the card has **Open PR #12** (a signal flag) in its bottom right corner, and the run's cell on the page ends in `· hold: open`. A tap on Open PR, or a long press (0.8 s) on the run's cell, which also opens the card, opens the pull request in your browser on the main screen, the same way [Captain's Call opens the decisions board](agents.md#opening-the-board): the desktop's URL handler in a transient scope of its own, outside the app's unit,
+Once no-mistakes has opened the run's pull request (from its `pr` step on: while it watches CI, and after the run passed or failed), the card has **Open PR #12** (a signal flag) in its bottom right corner. A tap on Open PR opens the pull request in your browser on the main screen, the same way [Captain's Call opens the decisions board](agents.md#opening-the-board): the desktop's URL handler in a transient scope of its own, outside the app's unit,
 
 ```sh
 systemd-run --user --scope --collect --quiet -- gio open https://github.com/<owner>/<repo>/pull/<number>
@@ -114,7 +113,7 @@ Only these no-mistakes commands run, each read-only, and no other (`screenpad_ag
 | `no-mistakes axi status --run <id>` | | each active run in detail: steps, gate, outcome, error; and the open card's run |
 | `no-mistakes axi rounds --run <id> --step <step> --json` | | the findings of the open card's steps that have some |
 
-The one command the Runs page runs that acts is opening a pull request, on Open PR or a long press: `systemd-run --user --scope --collect --quiet -- gio open <url>`, with the run's `pr` the commands above gave ([Opening a run's pull request](#opening-a-runs-pull-request)); `systemd-run` and `gio` get no `FM_*` variable. It runs in the Runs page's thread, between two reads.
+The one command the Runs page runs that acts is opening a pull request, on Open PR: `systemd-run --user --scope --collect --quiet -- gio open <url>`, with the run's `pr` the commands above gave ([Opening a run's pull request](#opening-a-runs-pull-request)); `systemd-run` and `gio` get no `FM_*` variable. It runs in the Runs page's thread, between two reads.
 
 firstmate's task worktrees come from its own reader: with `[runs] firstmate`, the reader the app already runs is asked for `--fields endpoints,paths` instead of `--fields endpoints`. Of firstmate's home the app reads nothing else but the names of the directories in `<home>/projects/`.
 
