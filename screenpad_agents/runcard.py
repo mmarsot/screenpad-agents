@@ -12,6 +12,8 @@ its agent's pane. Pure: runwatch.py reads the run while the card is open.
 from screenpad_app import clip
 from screenpad_app.common import MAX_LABEL, MAX_LINE_CHARS, MAX_LINES, MAX_TEXT
 
+from .common import BACK_ICON, FOCUS_ICON, icon
+
 COLUMNS, ROWS = 5, 4
 LINES, BACK, FOCUS, AGENT, STATE = "runs.lines", "runs.back", "runs.focus", "runs.agent", "runs.state"
 # Findings named on the card at most; the rest are counted.
@@ -32,10 +34,10 @@ class RunCard:
         detail = self.detail or view.detail
         lines = {"id": LINES, "col": 0, "row": 0, "cols": 4, "rows": 3, "touch": "none"}
         lines["lines"] = self.lines(view, detail)
-        out = [lines, {"id": BACK, "col": 4, "row": 0, "label": "Back", "icon": "go-previous-symbolic"}]
+        out = [lines, {"id": BACK, "col": 4, "row": 0, "label": "Back", "icon": icon(BACK_ICON)}]
         focus = {"id": FOCUS, "col": 4, "row": 1, "label": "Focus"}
         if view.pane:
-            focus["text"] = "its agent"
+            focus["icon"] = icon(FOCUS_ICON)
         else:
             focus.update({"text": "no agent in Herdr has its copy", "touch": "none"})
         out.append(focus)

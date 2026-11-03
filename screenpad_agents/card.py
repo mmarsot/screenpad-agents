@@ -16,6 +16,7 @@ on them, and a tap names the very screen it was made on. Pure: the loop
 from screenpad_app import clip
 from screenpad_app.common import MAX_LABEL, MAX_TEXT
 
+from .common import BACK_ICON, FOCUS_ICON, INTERRUPT_ICON, icon
 from .keymap import ALWAYS, DENY, ONCE, harness, offered
 
 COLUMNS, ROWS = 5, 4
@@ -64,10 +65,10 @@ class Card:
         act, or (False, why not)."""
         lines = self._lines()
         out = [{"id": SCREEN, "col": 0, "row": 0, "cols": 4, "rows": 3, "touch": "none", "lines": lines}]
-        out.append({"id": BACK, "col": 4, "row": 0, "label": "Back", "icon": "go-previous-symbolic"})
-        out.append({"id": FOCUS, "col": 4, "row": 1, "label": "Focus", "text": "its pane"})
+        out.append({"id": BACK, "col": 4, "row": 0, "label": "Back", "icon": icon(BACK_ICON)})
+        out.append({"id": FOCUS, "col": 4, "row": 1, "label": "Focus", "icon": icon(FOCUS_ICON)})
         can, why = interrupt
-        stop = {"id": INTERRUPT, "col": 4, "row": 2, "label": "Interrupt", "icon": "media-playback-stop-symbolic"}
+        stop = {"id": INTERRUPT, "col": 4, "row": 2, "label": "Interrupt", "icon": icon(INTERRUPT_ICON)}
         if can:
             stop["tone"] = "warning"
         else:

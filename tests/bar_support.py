@@ -221,6 +221,10 @@ class Asks:
     def choose(self, ask, k):
         self._finish(ask, ask.options[k]["id"], "chosen")
 
+    def dismiss(self, ask):
+        """The card's own Dismiss: closed with no answer."""
+        self._finish(ask, None, "dismissed")
+
     def cancel(self, client, ask_id):
         ask = self.find(client, ask_id)
         if ask is None:

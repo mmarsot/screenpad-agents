@@ -10,10 +10,13 @@ from bar_support import Apps, FakeClient
 from runs_support import detail, run, run_id, scan
 
 from screenpad_agents import runcard
+from screenpad_agents.common import ICONS
 from screenpad_agents.firstmate import Bearings, Task
 from screenpad_agents.fleet import Fleet
 from screenpad_agents.herdr import Agent
 from screenpad_agents.runs import Runs, widget_id
+
+LIGHTHOUSE = ICONS + "/lighthouse.svg"
 
 API, WEB = "/repos/api", "/repos/web"
 
@@ -62,6 +65,7 @@ class RunsPageTests(unittest.TestCase):
         apps = self.accepted(b, f)
         page = apps.pages["runs"]
         self.assertEqual((page.look["title"], page.look["text"], page.columns, page.rows), ("Runs", "1 active", 5, 2))
+        self.assertEqual(page.look["icon"], LIGHTHOUSE)
         cells = {w.id: w for w in page.widgets}
         api = [w for w in page.widgets if w.row == 0]
         self.assertEqual([w.look.get("label") for w in api], ["api", "fm/fix", "fm/new"])
@@ -71,7 +75,8 @@ class RunsPageTests(unittest.TestCase):
         self.assertNotIn(rid(3), cells)  # superseded by the newer run of fm/new
         web = [w for w in page.widgets if w.row == 1]
         self.assertEqual([(w.look["label"], w.look["text"]) for w in web], [("web", "no active run · no runs yet")])
-        self.assertEqual(apps.provided()["runs"], {"tone": "accept", "label": "Runs", "text": "1 active"})
+        tile = {"tone": "accept", "icon": LIGHTHOUSE, "label": "Runs", "text": "1 active"}
+        self.assertEqual(apps.provided()["runs"], tile)
         self.assertEqual(b.run_of(rid(4)), run_id(4))
 
     def test_a_run_is_joined_to_its_agent_by_cwd_and_its_task_by_worktree(self):
@@ -180,6 +185,7 @@ class RunsPageTests(unittest.TestCase):
         apps = self.accepted(b, fleet())
         self.assertEqual(apps.pages["runs"].widgets[0].look["label"], "no-mistakes unavailable")
         self.assertEqual(apps.provided()["runs"]["text"], "no-mistakes unavailable")
+        self.assertNotIn("icon", apps.provided()["runs"])  # its words show on the bar instead
         b.set_scan(scan([]))
         self.assertEqual(self.cells(b, fleet())["runs.note"].look["label"], "No projects")
 
@@ -201,15 +207,21 @@ class RunsPageTests(unittest.TestCase):
         self.assertEqual(lines[3], "review     awaiting_approval        4 s  2 findings")
         self.assertIn("waiting on a decision: answer it in the agent's pane", lines)
         self.assertIn("findings: missing-check (warning), typo (info)", lines)
-        self.assertEqual(cells[runcard.FOCUS].touch, "tap")
+        self.assertEqual(
+            (cells[runcard.FOCUS].touch, cells[runcard.FOCUS].look["icon"]), ("tap", ICONS + "/spyglass.svg")
+        )
+        self.assertEqual(cells[runcard.BACK].look["icon"], ICONS + "/back.svg")
         self.assertEqual(cells[runcard.AGENT].look["label"], "fix-api")
         self.assertEqual(
             cells[runcard.STATE].look["text"], "waiting on you · review · PR #12 · answer it in its agent's pane"
         )
         self.assertEqual(b.card_pane(f), "w1:p1")
         self.assertEqual(b.run_of(rid(2)), None)  # the grid is not shown
-        # Without an agent, Focus says so and takes no touch.
-        self.assertEqual(self.cells(b, fleet())[runcard.FOCUS].touch, "none")
+        # Without an agent, Focus says so, in place of its icon, and takes no touch.
+        focus = self.cells(b, fleet())[runcard.FOCUS]
+        self.assertEqual(
+            (focus.touch, focus.look["text"], focus.look.get("icon")), ("none", "no agent in Herdr has its copy", None)
+        )
         # A long error is wrapped; the card closes when the run leaves the list.
         d.error = "x" * 400
         self.assertTrue(self.cells(b, f)[runcard.LINES].look["lines"][-1].endswith("…"))

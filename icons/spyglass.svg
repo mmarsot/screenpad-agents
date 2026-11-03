@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Focus: a spyglass, to look at the agent's own pane. -->
+  <circle cx="32" cy="32" r="30" fill="#16294a" stroke="#e8eef7" stroke-width="2.5"/>
+  <g transform="rotate(-35 32 32)">
+    <rect x="7" y="27" width="13" height="10" rx="2" fill="#a8732a" stroke="#101418" stroke-width="1.2"/>
+    <rect x="19" y="25.5" width="16" height="13" rx="2" fill="#f2b84b" stroke="#101418" stroke-width="1.2"/>
+    <rect x="34" y="23.5" width="17" height="17" rx="2" fill="#f2b84b" stroke="#101418" stroke-width="1.2"/>
+    <rect x="50" y="22" width="6" height="20" rx="2" fill="#a8732a" stroke="#101418" stroke-width="1.2"/>
+    <line x1="22" y1="29" x2="32" y2="29" stroke="#fff3cf" stroke-width="2" stroke-linecap="round"/>
+    <line x1="37" y1="27" x2="48" y2="27" stroke="#fff3cf" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>

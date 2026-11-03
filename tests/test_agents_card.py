@@ -2,12 +2,14 @@
 widgets (checked against the app protocol by the stand-in touch bar), and the
 guard that sends keys only to the screen drawn. Herdr is a fake."""
 
+import os
 import unittest
 
 from agents_support import CURSOR, SESSION, FakeHerdr, dialog, task
 from bar_support import Apps, FakeClient
 
 from screenpad_agents.card import Card
+from screenpad_agents.common import ICONS
 from screenpad_agents.firstmate import Bearings
 from screenpad_agents.fleet import Fleet
 from screenpad_agents.herdr import Agent
@@ -106,6 +108,15 @@ class CardTests(unittest.TestCase):
         self.assertEqual(widgets["card.screen"]["lines"], LINES)
         self.assertEqual(widgets["answer.once." + token]["touch"], "long")
         self.assertEqual(widgets["card.state"]["text"], "Claude Code · blocked")
+        # Its buttons carry the app's icons, and no second line beside them.
+        icons = [(widgets[w]["label"], widgets[w]["icon"], widgets[w].get("text")) for w in ids(card)[1:4]]
+        self.assertEqual(
+            icons,
+            [("Back", ICONS + "/back.svg", None), ("Focus", ICONS + "/spyglass.svg", None)]
+            + [("Interrupt", ICONS + "/anchor.svg", None)],
+        )
+        for _, path, _ in icons:
+            self.assertTrue(os.path.isfile(path), path)
 
     def test_touches_map_to_answers_of_the_screen_drawn(self):
         card = Card("w1:p1")
@@ -138,6 +149,7 @@ class CardTests(unittest.TestCase):
         state = card.widgets("w", codex, (False, "no interrupt known for codex"))
         self.assertEqual(state[-1]["text"], "codex · blocked · answer it in its pane")
         self.assertEqual(state[3]["touch"], "none")
+        self.assertNotIn("icon", state[3])  # why it cannot, in place of the anchor
         # Herdr without state_change_seq: nothing to guard with, so no answers.
         card = Card("w1:p1")
         card.screen = Screen("w1:p1", Agent("w1:p1", "claude", "blocked"), LINES)

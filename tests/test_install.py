@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -135,6 +136,21 @@ class InstallTests(unittest.TestCase):
         modules = sorted(n for n in os.listdir(os.path.join(REPO, "screenpad_agents")) if n.endswith(".py"))
         self.assertEqual(installed, modules)
         self.assertTrue(os.path.isfile(os.path.join(self.lib, "vendor", "screenpad_app", "client.py")))
+        # The icons, which the installed copy gives the touch bar by absolute path.
+        icons = sorted(n for n in os.listdir(os.path.join(REPO, "icons")) if n.endswith(".svg"))
+        self.assertEqual(sorted(os.listdir(os.path.join(self.lib, "icons"))), icons)
+        for name in icons:
+            self.assertEqual(read(os.path.join(self.lib, "icons", name)), read(os.path.join(REPO, "icons", name)))
+        where = "import sys; sys.path[:0] = sys.argv[1:]; from screenpad_agents.common import icon; print(icon('helm'))"
+        found = subprocess.run(
+            [sys.executable, "-I", "-c", where, self.lib, os.path.join(self.lib, "vendor")],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(
+            found.stdout.strip(), os.path.join(os.path.realpath(self.lib), "icons", "helm.svg"), found.stderr
+        )
         self.assertFalse(os.path.exists(self.lib + ".new"))
         self.assertIn("not enabled", r.stdout)
         self.assertIn("It runs only once you write %s" % self.agents_toml, r.stdout)

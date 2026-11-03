@@ -21,7 +21,7 @@ from screenpad_app.common import ID as WIDGET_ID
 from screenpad_app.common import MAX_BADGE, MAX_LABEL, MAX_ROWS, MAX_TEXT, MAX_TILE_TEXT
 
 from . import runcard
-from .common import RUNS_PAGE, RUNS_TILE
+from .common import LIGHTHOUSE, RUNS_PAGE, RUNS_TILE, icon
 
 COLUMNS = 5
 MIN_ROWS = 2
@@ -298,6 +298,8 @@ class Runs:
             msg["text"] = clip(text, MAX_TILE_TEXT)
         elif self.error:
             msg["text"] = "no-mistakes unavailable"
+        if self.scan is not None:
+            msg["icon"] = icon(LIGHTHOUSE)
         if attention:
             msg["badge"] = clip(str(attention), MAX_BADGE)
         return msg
@@ -313,7 +315,8 @@ class Runs:
         else:
             widgets, rows = self._grid(views)
             columns = COLUMNS
-        msg = {"op": "page", "page": RUNS_PAGE, "title": "Runs", "text": clip(self.summary(views), MAX_TILE_TEXT)}
+        msg = {"op": "page", "page": RUNS_PAGE, "title": "Runs", "icon": icon(LIGHTHOUSE)}
+        msg["text"] = clip(self.summary(views), MAX_TILE_TEXT)
         msg.update({"tone": self.tone(views), "columns": columns, "rows": rows, "widgets": widgets})
         if attention:
             msg["badge"] = clip(str(attention), MAX_BADGE)

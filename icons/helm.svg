@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- The Agents app: a ship's helm, the fleet's wheel. -->
+  <circle cx="32" cy="32" r="30" fill="#16294a" stroke="#e8eef7" stroke-width="2.5"/>
+  <g stroke="#f2b84b" stroke-linecap="round">
+    <g stroke-width="3.2">
+      <line x1="32" y1="9" x2="32" y2="55"/>
+      <line x1="9" y1="32" x2="55" y2="32"/>
+      <line x1="15.7" y1="15.7" x2="48.3" y2="48.3"/>
+      <line x1="48.3" y1="15.7" x2="15.7" y2="48.3"/>
+    </g>
+    <circle cx="32" cy="32" r="14" fill="none" stroke-width="4.5"/>
+  </g>
+  <g fill="#f2b84b">
+    <circle cx="32" cy="8.5" r="3.4"/>
+    <circle cx="32" cy="55.5" r="3.4"/>
+    <circle cx="8.5" cy="32" r="3.4"/>
+    <circle cx="55.5" cy="32" r="3.4"/>
+    <circle cx="15.4" cy="15.4" r="3.4"/>
+    <circle cx="48.6" cy="48.6" r="3.4"/>
+    <circle cx="48.6" cy="15.4" r="3.4"/>
+    <circle cx="15.4" cy="48.6" r="3.4"/>
+    <circle cx="32" cy="32" r="5.5"/>
+  </g>
+  <circle cx="32" cy="32" r="2.2" fill="#16294a"/>
+</svg>
