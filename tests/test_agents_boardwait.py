@@ -160,8 +160,10 @@ class BoardWaitTests(unittest.TestCase):
         # firstmate opens the board after the wait ended: the button still
         # says Retry, and a tap on it finds the board rather than asking again.
         self.firstmate.board = FakeFirstmate.BOARD
+        reads = self.firstmate.reads
         self.tap(rig, "late")
         rig.until(lambda: self.button(rig) == OPEN)
+        rig.until(lambda: self.firstmate.reads > reads)
         rig.turn(10)
         self.assertEqual((self.firstmate.requests, rig.app.board.waiting()), (1, False))
         self.assertEqual(self.firstmate.opened, [])

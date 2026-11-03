@@ -137,6 +137,8 @@ class BoardRequest:
             if opened:
                 self.log("opened the decisions board: %s" % url)
             self.id = None  # the board is there: a later request asks anew
+            if self.waiting():
+                self.refresh()
             self._end()
             return self.board.set("shown" if opened else "open")
         if error is not None:
