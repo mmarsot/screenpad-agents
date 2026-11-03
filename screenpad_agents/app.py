@@ -11,8 +11,9 @@ a queue (and a pipe that wakes its select):
   and again on demand when the Captain's Call tile or widget is tapped; taps
   during a read add one read after it, not one each;
 - firstmate's control: interrupts a task's agent through fm-control.sh, which
-  takes seconds, so neither reader waits on it, and opens the decisions board
-  (firstmate.py) when Captain's Call is tapped.
+  takes seconds, so neither reader waits on it, opens the decisions board
+  (firstmate.py) when Captain's Call is tapped, and asks firstmate for one
+  when its card's Open decisions board is chosen.
 
 The loop keeps the connection to the touch bar through the client library's
 Link (retrying every RECONNECT seconds while the daemon is not running or
@@ -22,8 +23,10 @@ agent's widget opens its card (fleet.py, card.py), whose buttons focus,
 interrupt and answer; a tap on the agents tile focuses the first blocked
 agent; a tap on Captain's Call reads firstmate again and opens firstmate's
 decisions board in the browser on the main screen, or, when no board is
-open, asks a one-answer question in the bar saying so (the panel answers no
-Captain's Call).
+open, asks a question in the bar saying so, whose Open decisions board asks
+firstmate to build it: one note in its inbox, then none again until the board
+is seen open or BOARD_REQUEST_HOLD has passed (the panel answers no Captain's
+Call).
 """
 
 import os
@@ -37,11 +40,17 @@ from screenpad_app import Link, clip
 from screenpad_app.common import MAX_TEXT
 
 from . import card as cards
-from .common import APP, BOARD_CARD_TIMEOUT, CALLS_TILE, FLEET_TILE, PAGE, RECONNECT
+from .common import APP, BOARD_CARD_TIMEOUT, BOARD_REQUEST_HOLD, CALLS_TILE, FLEET_TILE, PAGE, RECONNECT
 from .firstmate import FirstmateError
 from .fleet import CALLS_WIDGET, Fleet
 from .herdr import HerdrError
 from .screen import guarded_send, read_screen
+
+# The answers of the card that says no board is open.
+REQUEST, OK = "request", "ok"
+REQUESTED = (
+    "firstmate was asked for /bearings lavish. Lavish opens the board once it is built; then a tap here opens it."
+)
 
 
 class App:
@@ -65,6 +74,7 @@ class App:
         self._opening = False
         self._asked = None
         self._asks = 0
+        self._requested = None  # when the app last asked firstmate for the board
 
     # --- the worker threads ------------------------------------------------
 
@@ -155,6 +165,12 @@ class App:
                 except Exception as e:
                     self._post("board", None, _why(e, FirstmateError))
                 continue
+            if job[0] == "request":
+                try:
+                    self._post("requested", self.firstmate.request_board(), None)
+                except Exception as e:
+                    self._post("requested", None, _why(e, FirstmateError))
+                continue
             _, pane, task_id = job
             try:
                 self._post("interrupted", pane, self.firstmate.interrupt(task_id), None)
@@ -232,6 +248,9 @@ class App:
         elif what == "board":
             self._board(*rest)
             return False
+        elif what == "requested":
+            self._board_requested(*rest)
+            return False
         elif what == "log":
             self.log(rest[0])
             return False
@@ -240,17 +259,48 @@ class App:
     def _board(self, url, error):
         self._opening = False
         if url is not None:
+            self._requested = None  # the board is there: a later request asks again
             self.log("opened the decisions board: %s" % url)
         elif error is not None:
             self.log("the decisions board did not open: %s" % error)
             self._ask("Decisions board not opened", error)
+        elif self._request_pending():
+            self.log("no decisions board is open yet; firstmate was asked for one")
+            self._ask("Decisions board requested", REQUESTED)
         else:
             self.log("no decisions board is open")
-            self._ask("No decisions board open", "Ask firstmate for /bearings lavish; it builds the board.")
+            text = "firstmate builds it: Open decisions board asks it for /bearings lavish."
+            self._ask(
+                "No decisions board open", text, {"id": REQUEST, "label": "Open decisions board", "tone": "accept"}
+            )
 
-    def _ask(self, title, text):
-        """Show title and text in the bar as a card with one answer, OK,
-        in place of the last one if it is still up. The answer does nothing."""
+    def _request_pending(self):
+        return self._requested is not None and self.clock() - self._requested < BOARD_REQUEST_HOLD
+
+    def request_board(self):
+        """Open decisions board chosen on the card: ask firstmate for the
+        board with one note, unless a request is still pending."""
+        if self.firstmate is None:
+            return
+        if self._request_pending():
+            self._ask("Decisions board requested", REQUESTED)
+            return
+        self._requested = self.clock()
+        self._control.put(("request",))
+
+    def _board_requested(self, note, error):
+        if error is not None:
+            self._requested = None  # nothing was asked: the next try asks again
+            self.log("firstmate was not asked for the decisions board: %s" % error)
+            self._ask("Decisions board not requested", error)
+            return
+        self.log("asked firstmate for the decisions board: %s" % note)
+        self._ask("Decisions board requested", REQUESTED)
+
+    def _ask(self, title, text, *more):
+        """Show title and text in the bar as a card with the answers more,
+        then OK, in place of the last one if it is still up. OK does nothing
+        but close it."""
         if not self.link.connected:
             return
         if self._asked is not None:
@@ -258,7 +308,7 @@ class App:
         self._asks += 1
         self._asked = "board.%d" % self._asks
         msg = {"op": "ask", "id": self._asked, "title": title, "text": clip(text, MAX_TEXT)}
-        msg.update({"options": [{"id": "ok", "label": "OK"}], "timeout": BOARD_CARD_TIMEOUT})
+        msg.update({"options": [*more, {"id": OK, "label": "OK"}], "timeout": BOARD_CARD_TIMEOUT})
         self.link.send(msg)
 
     def _answered(self, pane, answer, why, fresh):
@@ -300,6 +350,8 @@ class App:
             self._asked = None
             if msg.get("reason") == "unavailable":
                 self.log("the touch bar could not show the board's card")
+            elif msg.get("option") == REQUEST:
+                self.request_board()
         elif op == "event" and msg.get("page") == PAGE and msg.get("type") in ("tap", "long"):
             self._touch(msg.get("widget"), msg["type"])
         elif op == "event" and msg.get("type") == "up" and msg.get("inside") is True:

@@ -16,7 +16,7 @@ knows the task's harness and checks what it did:
 
   FM_HOME=<home> <code>/bin/fm-control.sh <task id> interrupt
 
-It is the only firstmate command that acts; nothing writes into firstmate.
+It and the board's request below are the only firstmate commands that act.
 
 Tapping Captain's Call opens firstmate's decisions board, the Lavish board
 of /bearings lavish, in the browser on the main screen, where the decisions
@@ -28,7 +28,11 @@ and it is open when Lavish's own session listing (lavish-axi, run with no
 argument) shows that file "open", with its session's URL. That URL, and only
 a loopback http one, is handed to the desktop's URL handler (gio open). With
 no session open nothing is built or armed from here: firstmate composes the
-board, so the panel says to ask it for /bearings lavish.
+board. The panel can ask it to, with one note in firstmate's inbox,
+
+  FM_HOME=<home> <code>/bin/fm-inbox.sh note -- <BOARD_REQUEST>
+
+which wakes firstmate once; it then builds the board, and Lavish opens it.
 """
 
 import json
@@ -36,7 +40,15 @@ import os
 import re
 import subprocess
 
-from .common import BEARINGS_SCHEMA, BOARD_TIMEOUT, CONTROL_TIMEOUT, FIRSTMATE_TIMEOUT, LAVISH_TIMEOUT, OPEN_TIMEOUT
+from .common import (
+    BEARINGS_SCHEMA,
+    BOARD_TIMEOUT,
+    CONTROL_TIMEOUT,
+    FIRSTMATE_TIMEOUT,
+    INBOX_TIMEOUT,
+    LAVISH_TIMEOUT,
+    OPEN_TIMEOUT,
+)
 
 # A task id as fm-control.sh takes it: a bare id, never an option or an
 # endpoint.
@@ -46,6 +58,12 @@ TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 SESSION_ROW = re.compile(r'(?P<status>[^,]*),"(?P<url>[^"]*)"')
 # The board's URL as Lavish serves it: on this machine only.
 BOARD_URL = re.compile(r"http://(127\.0\.0\.1|localhost|\[::1\]):[0-9]{1,5}/[A-Za-z0-9._~/%-]*")
+# The note that asks firstmate for its decisions board, what it asks first
+# (firstmate's wake shows the note's start).
+BOARD_REQUEST = (
+    "Please open the decisions board: /bearings lavish. "
+    "Asked from Captain's Call on the ScreenPad, where no decisions board is open."
+)
 
 
 class FirstmateError(Exception):
@@ -99,11 +117,12 @@ class Firstmate:
         run=subprocess.run,
         timeout=FIRSTMATE_TIMEOUT,
         board=None,
+        inbox=None,
         lavish=("lavish-axi",),
         opener=("gio", "open"),
     ):
         self.home, self.bearings, self.control, self._run, self.timeout = home, bearings, control, run, timeout
-        self.board, self.lavish, self.opener = board, list(lavish), list(opener)
+        self.board, self.inbox, self.lavish, self.opener = board, inbox, list(lavish), list(opener)
 
     def read(self):
         """The Bearings now; FirstmateError when the reader fails."""
@@ -142,6 +161,16 @@ class Firstmate:
         if url is not None:
             self._call(self.opener + [url], "opening the board", OPEN_TIMEOUT, home=False, detach=True)
         return url
+
+    def request_board(self):
+        """Ask firstmate to build and open its decisions board, with one note
+        in its inbox (one wake): what fm-inbox.sh reported, as "queued <id>",
+        or FirstmateError when it refused or failed."""
+        if not self.inbox or not os.access(self.inbox, os.X_OK):
+            raise FirstmateError("firstmate has no bin/fm-inbox.sh")
+        done = self._call([self.inbox, "note", "--", BOARD_REQUEST], "fm-inbox.sh note", INBOX_TIMEOUT)
+        out = (done.stdout or "").strip().splitlines()
+        return out[0].strip() if out else "queued"
 
     def _call(self, argv, what, timeout, home=True, detach=False):
         """Run one of firstmate's commands with FM_HOME (or, home False,

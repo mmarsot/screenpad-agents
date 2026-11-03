@@ -17,7 +17,9 @@ def clients(config):
     herdr = Herdr(config.herdr, config.session)
     firstmate = None
     if config.home:
-        firstmate = Firstmate(config.home, config.bearings, config.control, board=config.board, lavish=config.lavish)
+        firstmate = Firstmate(
+            config.home, config.bearings, config.control, board=config.board, inbox=config.inbox, lavish=config.lavish
+        )
     return herdr, firstmate
 
 

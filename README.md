@@ -3,7 +3,7 @@
 Puts your coding agents on the ASUS ScreenPad's touch bar, as an app of [screenpad-linux](https://github.com/mmarsot/screenpad-linux)'s touch bar:
 
 - **Every agent [Herdr](https://herdr.dev) reports**, one large widget each on the touch bar's apps page, colored by Herdr's own state: green while working, amber while blocked (waiting for you), grey when idle. Herdr is the authority on which agents run and in what state; the app only shows what it says.
-- **firstmate tasks and decisions**, when you use firstmate: an agent whose pane is a task's endpoint is named after the task, and a Captain's Call widget counts the decisions waiting for you. Tapping it opens firstmate's decisions board in the browser on the main screen; the panel itself answers none.
+- **firstmate tasks and decisions**, when you use firstmate: an agent whose pane is a task's endpoint is named after the task, and a Captain's Call widget counts the decisions waiting for you. Tapping it opens firstmate's decisions board in the browser on the main screen, or, when none is open, offers to ask firstmate for one; the panel itself answers none.
 - **An agent's card**, when you tap it: the agent's own screen, Focus and Interrupt, and for a Claude Code permission dialog Allow once, Always (a long press) and Deny, sent only if the dialog is still the one drawn.
 - Two **tiles for the bar**, if you give them spots: `agents` (how many agents, how many blocked) and `calls` (the Captain's Call count).
 

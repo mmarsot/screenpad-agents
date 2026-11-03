@@ -134,9 +134,10 @@ def fake_bearings(code):
     """A fake firstmate checkout: bin/fm-bearings-snapshot.sh prints the
     model in model.json next to it, and records FM_HOME and its arguments;
     bin/fm-control.sh is fake_control's, bin/fm-bearings-board.sh
-    fake_board's."""
+    fake_board's, bin/fm-inbox.sh fake_inbox's."""
     fake_control(code)
     fake_board(code)
+    fake_inbox(code)
     write_json(os.path.join(code, "bin", "model.json"), bearings_model())
     return write_script(
         os.path.join(code, "bin", "fm-bearings-snapshot.sh"),
@@ -194,6 +195,29 @@ def fake_board(code):
         if sys.argv[1:] != ["path"]:
             sys.exit(2)
         print(os.path.join(os.environ["FM_HOME"], ".lavish", "bearings-board.html"))
+        """,
+    )
+
+
+def fake_inbox(code):
+    """firstmate's bin/fm-inbox.sh in a fake checkout: records FM_HOME and
+    its arguments in inbox.jsonl, next to it, and prints what note prints;
+    fails when inbox.fail exists. It writes into no firstmate home."""
+    os.makedirs(os.path.join(code, "bin"), exist_ok=True)
+    return write_script(
+        os.path.join(code, "bin", "fm-inbox.sh"),
+        """
+        import json, os, sys
+        here = os.path.dirname(os.path.abspath(__file__))
+        fm = sorted(k for k in os.environ if k.startswith("FM_"))
+        with open(os.path.join(here, "inbox.jsonl"), "a") as f:
+            f.write(json.dumps({"FM_HOME": os.environ.get("FM_HOME"), "fm": fm, "args": sys.argv[1:]}) + "\\n")
+        if os.path.exists(os.path.join(here, "inbox.fail")):
+            print("fm-inbox: refusing to queue an empty note", file=sys.stderr)
+            sys.exit(1)
+        print("queued 1793706159-abc123")
+        print("  " + sys.argv[-1])
+        print("  firstmate will pick this up at its next check.")
         """,
     )
 
@@ -334,7 +358,8 @@ class FakeHerdr:
 class FakeFirstmate:
     """firstmate's client for the loop. board is the URL of the board
     Lavish has open (None: none open); open_board records each URL it
-    opened, after waiting for release when the test sets it."""
+    opened, after waiting for release when the test sets it; request_board
+    counts the requests, failing with request_error when it is set."""
 
     BOARD = "http://127.0.0.1:4387/session/b0a2d"
 
@@ -349,6 +374,8 @@ class FakeFirstmate:
         self.board_calls = 0
         self.opened = []
         self.release = None
+        self.requests = 0
+        self.request_error = None
 
     def open_board(self):
         self.board_calls += 1
@@ -359,6 +386,12 @@ class FakeFirstmate:
         if self.board is not None:
             self.opened.append(self.board)
         return self.board
+
+    def request_board(self):
+        self.requests += 1
+        if self.request_error:
+            raise FirstmateError(self.request_error)
+        return "queued 1793706159-abc123"
 
     def interrupt(self, task_id):
         self.interrupted.append(task_id)

@@ -1,7 +1,9 @@
 """Captain's Call opening firstmate's decisions board: finding it through
 fm-bearings-board.sh path and Lavish's session listing, opening its URL with
-the opener (a stand-in here, so nothing opens on the screen), and the tap in
-the loop: the board opened, or the card saying none is open."""
+the opener (a stand-in here, so nothing opens on the screen), asking
+firstmate for it with one fm-inbox.sh note (a stand-in too, writing into no
+firstmate home), and the tap in the loop: the board opened, or the card
+saying none is open, whose Open decisions board asks firstmate once."""
 
 import os
 import signal
@@ -24,9 +26,17 @@ from agents_support import (
     task,
 )
 
-from screenpad_agents.firstmate import Firstmate, FirstmateError, listed_url
+from screenpad_agents.common import BOARD_REQUEST_HOLD
+from screenpad_agents.firstmate import BOARD_REQUEST, Firstmate, FirstmateError, listed_url
 
 URL = "http://127.0.0.1:4387/session/b2403039846e8e74"
+NO_BOARD = "No decisions board open"
+NO_BOARD_TEXT = "firstmate builds it: Open decisions board asks it for /bearings lavish."
+REQUESTED_CARD = (
+    "Decisions board requested",
+    "firstmate was asked for /bearings lavish. Lavish opens the board once it is built; then a tap here opens it.",
+    ["OK"],
+)
 
 
 class BoardTests(unittest.TestCase):
@@ -47,6 +57,7 @@ class BoardTests(unittest.TestCase):
             os.path.join(bin_, "fm-bearings-snapshot.sh"),
             os.path.join(bin_, "fm-control.sh"),
             board=os.path.join(bin_, "fm-bearings-board.sh"),
+            inbox=os.path.join(bin_, "fm-inbox.sh"),
             lavish=[self.lavish],
             opener=[self.opener, "open"],
         )
@@ -135,6 +146,27 @@ class BoardTests(unittest.TestCase):
         with self.assertRaisesRegex(FirstmateError, "firstmate has no"):
             Firstmate(self.home, "r", "c").board_url()
 
+    def test_the_board_is_asked_for_with_one_inbox_note(self):
+        with mock.patch.dict(os.environ, {"FM_HOME": "/home/me/firstmate", "FM_BACKEND": "herdr"}):
+            self.assertEqual(self.fm.request_board(), "queued 1793706159-abc123")
+        # One note on the configured home only, its text after --, and
+        # nothing else: no board built, no Lavish, no opener.
+        calls = read_calls(os.path.join(self.code, "bin", "inbox.jsonl"))
+        self.assertEqual(calls, [{"FM_HOME": self.home, "fm": ["FM_HOME"], "args": ["note", "--", BOARD_REQUEST]}])
+        self.assertIn("/bearings lavish", BOARD_REQUEST)
+        self.assertEqual(read_calls(os.path.join(self.code, "bin", "board.jsonl")), [])
+        self.assertEqual((read_calls(os.path.join(self.dir, "lavish.jsonl")), self.opened()), ([], []))
+
+    def test_a_refused_request_says_why(self):
+        open(os.path.join(self.code, "bin", "inbox.fail"), "w").close()
+        with self.assertRaisesRegex(FirstmateError, "fm-inbox.sh note failed: fm-inbox: refusing"):
+            self.fm.request_board()
+        os.remove(os.path.join(self.code, "bin", "fm-inbox.sh"))
+        with self.assertRaisesRegex(FirstmateError, "firstmate has no bin/fm-inbox.sh"):
+            self.fm.request_board()
+        with self.assertRaisesRegex(FirstmateError, "firstmate has no bin/fm-inbox.sh"):
+            Firstmate(self.home, "r", "c").request_board()
+
     def test_a_board_path_that_is_not_one_is_refused(self):
         for out in ("", "relative/board.html\n", "/a\n/b\n"):
             done = subprocess.CompletedProcess([], 0, out, "")
@@ -193,7 +225,7 @@ class BoardTapTests(unittest.TestCase):
         rig = self.rig()
         self.firstmate.board = None
         rig.apps.press(rig.client(), "agents", "calls", "tap")
-        card = ("No decisions board open", "Ask firstmate for /bearings lavish; it builds the board.", ["OK"])
+        card = (NO_BOARD, NO_BOARD_TEXT, ["Open decisions board", "OK"])
         rig.until(lambda: self.asked(rig) == [card])
         self.assertEqual(self.firstmate.opened, [])
         self.assertEqual(rig.logged, ["no decisions board is open"])
@@ -202,12 +234,68 @@ class BoardTapTests(unittest.TestCase):
         rig.until(lambda: self.firstmate.board_calls == 2)
         rig.turn(10)
         self.assertEqual(self.asked(rig), [card])
-        # OK closes it, and does nothing more.
+        # OK closes it, and does nothing more: no note to firstmate either.
         ask = rig.apps.asks.queue[0]
-        rig.apps.asks.choose(ask, 0)
+        rig.apps.asks.choose(ask, 1)
         rig.turn(10)
         self.assertEqual((self.asked(rig), rig.app._asked), ([], None))
         self.assertEqual((self.herdr.sent, self.firstmate.interrupted, self.firstmate.opened), ([], [], []))
+        self.assertEqual(self.firstmate.requests, 0)
+
+    def no_board_card(self, rig):
+        rig.apps.press(rig.client(), "agents", "calls", "tap")
+        rig.until(lambda: [a.title for a in rig.apps.asks.queue] == [NO_BOARD])
+        return rig.apps.asks.queue[0]
+
+    def test_open_decisions_board_asks_firstmate_once(self):
+        rig = self.rig()
+        self.firstmate.board = None
+        rig.apps.asks.choose(self.no_board_card(rig), 0)
+        rig.until(lambda: self.asked(rig) == [REQUESTED_CARD])
+        self.assertEqual(self.firstmate.requests, 1)
+        self.assertIn("asked firstmate for the decisions board: queued 1793706159-abc123", rig.logged)
+        # While it is pending, a tap on Captain's Call still looks for the
+        # board, and says it was requested; nothing asks firstmate again.
+        calls = self.firstmate.board_calls
+        rig.apps.event("calls", "up", inside=True)
+        rig.until(lambda: self.firstmate.board_calls == calls + 1)
+        rig.turn(10)
+        self.assertEqual(self.asked(rig), [REQUESTED_CARD])
+        rig.app.request_board()  # an Open decisions board chosen on an older card
+        rig.turn(10)
+        self.assertEqual((self.firstmate.requests, self.asked(rig)), (1, [REQUESTED_CARD]))
+        self.assertEqual((self.herdr.sent, self.firstmate.interrupted, self.firstmate.opened), ([], [], []))
+
+    def test_a_request_ends_when_the_board_opens_or_after_the_hold(self):
+        rig = self.rig()
+        self.firstmate.board = None
+        rig.apps.asks.choose(self.no_board_card(rig), 0)
+        rig.until(lambda: self.firstmate.requests == 1)
+        # Past the hold, the card offers to ask again.
+        rig.app._requested -= BOARD_REQUEST_HOLD
+        rig.apps.asks.choose(self.no_board_card(rig), 0)
+        rig.until(lambda: self.firstmate.requests == 2)
+        # Once the board is seen open, a later request asks again at once.
+        self.firstmate.board = FakeFirstmate.BOARD
+        rig.apps.press(rig.client(), "agents", "calls", "tap")
+        rig.until(lambda: rig.app._requested is None)
+        self.assertEqual(self.firstmate.opened, [FakeFirstmate.BOARD])
+        self.firstmate.board = None
+        rig.apps.asks.choose(self.no_board_card(rig), 0)
+        rig.until(lambda: self.firstmate.requests == 3)
+
+    def test_a_failed_request_is_shown_and_can_be_tried_again(self):
+        rig = self.rig()
+        self.firstmate.board = None
+        self.firstmate.request_error = "fm-inbox.sh note failed: exit 1"
+        rig.apps.asks.choose(self.no_board_card(rig), 0)
+        failed = ("Decisions board not requested", "fm-inbox.sh note failed: exit 1", ["OK"])
+        rig.until(lambda: self.asked(rig) == [failed])
+        self.assertIn("firstmate was not asked for the decisions board: fm-inbox.sh note failed: exit 1", rig.logged)
+        self.firstmate.request_error = None
+        rig.apps.asks.choose(self.no_board_card(rig), 0)
+        rig.until(lambda: self.asked(rig) == [REQUESTED_CARD])
+        self.assertEqual(self.firstmate.requests, 2)
 
     def test_a_failure_is_shown_on_the_card(self):
         rig = self.rig()

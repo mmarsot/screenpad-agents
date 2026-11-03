@@ -47,8 +47,13 @@ CONTROL_TIMEOUT = 60.0
 BOARD_TIMEOUT = 15.0
 LAVISH_TIMEOUT = 15.0
 OPEN_TIMEOUT = 15.0
+# Asking firstmate for the board: one note in its inbox (fm-inbox.sh note).
+INBOX_TIMEOUT = 15.0
 # The card that says no board is open stays this long, unless dismissed.
 BOARD_CARD_TIMEOUT = 30
+# After asking firstmate for the board, how long the app waits for it before
+# it would ask again (seconds): taps meanwhile queue no second note.
+BOARD_REQUEST_HOLD = 300.0
 
 
 class AgentsError(Exception):
