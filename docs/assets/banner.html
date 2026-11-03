@@ -1,0 +1,325 @@
+<!doctype html>
+<!--
+  Source of the README banner (banner-light.png, banner-dark.png). Rendered at
+  1280x320 with a transparent page background; see docs/assets/README.md.
+  Open with ?theme=dark for the dark variant. Uses the Ubuntu Sans font that
+  Ubuntu installs, so it needs no network.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>screenpad-agents banner</title>
+    <style>
+      :root {
+        /* "Night deck", as screenpad-linux's banner: the ScreenPad's black glass, a teal touch and an amber key. */
+        --ink: #0e1726;
+        --slate: #1e293b;
+        --teal: #2dd4bf;
+        --teal-deep: #0f766e;
+        --amber: #fbbf24;
+        --mist: #eef6f5;
+        --line: #d5e6e3;
+        --ink-soft: #475569;
+
+        --bg: var(--mist);
+        --border: var(--line);
+        --name: var(--ink);
+        --accent: var(--teal-deep);
+        --text: var(--ink-soft);
+        --deck: #c9d6d8;
+        --deck-edge: #b4c4c7;
+        --key: #e9f0f1;
+        --key-edge: #a9babd;
+        --glass: #0b0b0e;
+        --glass-edge: #2a3445;
+        --glow: rgba(45, 212, 191, 0.18);
+      }
+      :root.dark {
+        --bg: var(--ink);
+        --border: var(--slate);
+        --name: #ffffff;
+        --accent: var(--teal);
+        --text: rgba(226, 232, 240, 0.78);
+        --deck: #1b2536;
+        --deck-edge: #273349;
+        --key: #121a28;
+        --key-edge: #2c384d;
+        --glass: #05080f;
+        --glass-edge: #334155;
+        --glow: rgba(45, 212, 191, 0.22);
+      }
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+      }
+      .banner {
+        box-sizing: border-box;
+        width: 1280px;
+        height: 320px;
+        border-radius: 36px;
+        border: 2px solid var(--border);
+        background: var(--bg);
+        display: flex;
+        align-items: center;
+        padding: 0 0 0 76px;
+        overflow: hidden;
+        position: relative;
+      }
+      .banner::after {
+        /* A thin teal-to-amber band, like the strip of keys on the panel. */
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 10px;
+        background: linear-gradient(90deg, var(--teal), var(--amber));
+      }
+      .words {
+        flex: 1;
+        font-family: "Ubuntu Sans", "Ubuntu", sans-serif;
+      }
+      .eyebrow {
+        font-weight: 700;
+        font-size: 24px;
+        line-height: 1;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 16px;
+      }
+      h1 {
+        font-weight: 800;
+        font-size: 80px;
+        line-height: 1.02;
+        letter-spacing: -0.02em;
+        color: var(--name);
+        margin: 0 0 18px;
+      }
+      h1 span {
+        color: var(--accent);
+      }
+      p {
+        font-weight: 500;
+        font-size: 30px;
+        line-height: 1.3;
+        color: var(--text);
+        margin: 0;
+      }
+      svg {
+        flex-shrink: 0;
+        width: 470px;
+        height: 320px;
+      }
+      .deck {
+        fill: var(--deck);
+        stroke: var(--deck-edge);
+        stroke-width: 2;
+      }
+      .key {
+        fill: var(--key);
+        stroke: var(--key-edge);
+        stroke-width: 1.5;
+      }
+      .glass {
+        fill: var(--glass);
+        stroke: var(--glass-edge);
+        stroke-width: 2;
+      }
+      .glow {
+        fill: var(--glow);
+      }
+      /* The touch bar's own colours, as in docs/images/agents-page.png. */
+      .tile {
+        fill: #3a3a40;
+      }
+      .tile-empty {
+        fill: none;
+        stroke: #3a3a44;
+        stroke-width: 1.5;
+      }
+      .blocked {
+        fill: #e5a50a;
+      }
+      .working {
+        fill: #26a269;
+      }
+      .idle {
+        fill: #3a3a40;
+      }
+      .glyph {
+        fill: none;
+        stroke: #f4f4f5;
+        stroke-width: 2.2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .glyph-dim {
+        stroke: #8b8b95;
+      }
+      .name {
+        fill: rgba(0, 0, 0, 0.78);
+      }
+      .detail {
+        fill: rgba(0, 0, 0, 0.42);
+      }
+      .on-dark .name {
+        fill: #f4f4f5;
+      }
+      .on-dark .detail {
+        fill: #8b8b95;
+      }
+      .on-green .name {
+        fill: #ffffff;
+      }
+      .on-green .detail {
+        fill: rgba(255, 255, 255, 0.6);
+      }
+      .badge {
+        fill: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="banner">
+      <div class="words">
+        <div class="eyebrow">ScreenPad touch bar · Herdr · firstmate</div>
+        <h1>screenpad<span>-agents</span></h1>
+        <p>Your coding agents on the ScreenPad's touch bar</p>
+      </div>
+      <svg viewBox="0 0 470 320" aria-hidden="true">
+        <defs>
+          <!-- The app's icons, from icons/helm.svg and icons/captain.svg, on a 64 x 64 grid. -->
+          <g id="helm">
+            <circle cx="32" cy="32" r="30" fill="#16294a" stroke="#e8eef7" stroke-width="2.5" />
+            <g stroke="#f2b84b" stroke-linecap="round">
+              <g stroke-width="3.2">
+                <line x1="32" y1="9" x2="32" y2="55" />
+                <line x1="9" y1="32" x2="55" y2="32" />
+                <line x1="15.7" y1="15.7" x2="48.3" y2="48.3" />
+                <line x1="48.3" y1="15.7" x2="15.7" y2="48.3" />
+              </g>
+              <circle cx="32" cy="32" r="14" fill="none" stroke-width="4.5" />
+            </g>
+            <g fill="#f2b84b">
+              <circle cx="32" cy="8.5" r="3.4" />
+              <circle cx="32" cy="55.5" r="3.4" />
+              <circle cx="8.5" cy="32" r="3.4" />
+              <circle cx="55.5" cy="32" r="3.4" />
+              <circle cx="15.4" cy="15.4" r="3.4" />
+              <circle cx="48.6" cy="48.6" r="3.4" />
+              <circle cx="48.6" cy="15.4" r="3.4" />
+              <circle cx="15.4" cy="48.6" r="3.4" />
+              <circle cx="32" cy="32" r="5.5" />
+            </g>
+          </g>
+          <g id="cap">
+            <circle cx="32" cy="32" r="30" fill="#16294a" stroke="#e8eef7" stroke-width="2.5" />
+            <path d="M10 30 C10 19 21 14 32 14 C43 14 54 19 54 30 C54 32 52 33 49 33 L15 33 C12 33 10 32 10 30 Z" fill="#ffffff" />
+            <rect x="15" y="32" width="34" height="9" rx="1.5" fill="#101418" />
+            <line x1="15.5" y1="36.5" x2="48.5" y2="36.5" stroke="#f2b84b" stroke-width="1.8" />
+            <path d="M14 41 L50 41 C49 47 41 50 32 50 C23 50 15 47 14 41 Z" fill="#05070a" stroke="#e8eef7" stroke-width="1.2" />
+            <circle cx="32" cy="24" r="6.5" fill="#f2b84b" />
+          </g>
+        </defs>
+
+        <!-- The laptop's deck, coming in from the top right edge. -->
+        <rect class="deck" x="24" y="-40" width="480" height="342" rx="28" />
+        <!-- Keyboard rows, cut by the banner's top edge. -->
+        <g>
+          <rect class="key" x="52" y="-14" width="34" height="30" rx="6" />
+          <rect class="key" x="92" y="-14" width="34" height="30" rx="6" />
+          <rect class="key" x="132" y="-14" width="34" height="30" rx="6" />
+          <rect class="key" x="172" y="-14" width="34" height="30" rx="6" />
+          <rect class="key" x="212" y="-14" width="34" height="30" rx="6" />
+          <rect class="key" x="252" y="-14" width="34" height="30" rx="6" />
+          <rect class="key" x="292" y="-14" width="34" height="30" rx="6" />
+          <rect class="key" x="332" y="-14" width="34" height="30" rx="6" />
+          <rect class="key" x="372" y="-14" width="34" height="30" rx="6" />
+          <rect class="key" x="412" y="-14" width="34" height="30" rx="6" />
+
+          <rect class="key" x="52" y="22" width="52" height="30" rx="6" />
+          <rect class="key" x="110" y="22" width="34" height="30" rx="6" />
+          <rect class="key" x="150" y="22" width="34" height="30" rx="6" />
+          <rect class="key" x="190" y="22" width="34" height="30" rx="6" />
+          <rect class="key" x="230" y="22" width="34" height="30" rx="6" />
+          <rect class="key" x="270" y="22" width="34" height="30" rx="6" />
+          <rect class="key" x="310" y="22" width="34" height="30" rx="6" />
+          <rect class="key" x="350" y="22" width="34" height="30" rx="6" />
+          <rect class="key" x="390" y="22" width="56" height="30" rx="6" />
+
+          <rect class="key" x="52" y="58" width="74" height="30" rx="6" />
+          <rect class="key" x="132" y="58" width="34" height="30" rx="6" />
+          <rect class="key" x="172" y="58" width="154" height="30" rx="6" />
+          <rect class="key" x="332" y="58" width="34" height="30" rx="6" />
+          <rect class="key" x="372" y="58" width="74" height="30" rx="6" />
+        </g>
+
+        <!-- The ScreenPad: black glass showing the apps page on the Agents page. -->
+        <rect class="glow" x="76" y="106" width="352" height="203" rx="18" />
+        <rect class="glass" x="82" y="112" width="340" height="191" rx="14" />
+
+        <!-- The bar: push to talk, the agents tile (the helm, 1 blocked), Captain's Call's page item (the cap, 2 waiting), two empty spots, the page button (the touchpad: a tap goes back to it), the grip. -->
+        <rect class="tile" x="92" y="120" width="40" height="28" rx="7" />
+        <path class="glyph" d="M112 126.5v8 M108.5 129.5a3.5 3.5 0 0 1 7 0v5a3.5 3.5 0 0 1-7 0z M106 134a6 6 0 0 0 12 0 M112 140v4" />
+
+        <rect class="blocked" x="138" y="120" width="40" height="28" rx="7" />
+        <use href="#helm" transform="translate(148 124) scale(0.3125)" />
+        <circle class="badge" cx="173" cy="124.5" r="4.2" />
+        <text x="173" y="127" font-family="Ubuntu Sans, Ubuntu, sans-serif" font-weight="800" font-size="7" text-anchor="middle" fill="#0b0b0e">1</text>
+
+        <rect class="blocked" x="184" y="120" width="40" height="28" rx="7" />
+        <use href="#cap" transform="translate(194 124) scale(0.3125)" />
+        <circle class="badge" cx="219" cy="124.5" r="4.2" />
+        <text x="219" y="127" font-family="Ubuntu Sans, Ubuntu, sans-serif" font-weight="800" font-size="7" text-anchor="middle" fill="#0b0b0e">2</text>
+
+        <rect class="tile-empty" x="230.75" y="120.75" width="38.5" height="26.5" rx="7" />
+        <path class="glyph glyph-dim" d="M250 129v10 M245 134h10" />
+        <rect class="tile-empty" x="276.75" y="120.75" width="38.5" height="26.5" rx="7" />
+        <path class="glyph glyph-dim" d="M296 129v10 M291 134h10" />
+
+        <rect class="tile-empty" x="322.75" y="120.75" width="38.5" height="26.5" rx="7" />
+        <path class="glyph" d="M333 127h18v12h-18z M333 135h18 M342 135v4" />
+
+        <rect class="tile" x="370" y="120" width="42" height="28" rx="7" />
+        <path class="glyph glyph-dim" d="M384 129l7-4 7 4 M382 134h18 M384 139l7 4 7-4" />
+
+        <!-- The Agents page: Captain's Call, then one agent a tile, coloured by Herdr's state. -->
+        <rect class="blocked" x="92" y="158" width="74" height="64" rx="9" />
+        <use href="#cap" transform="translate(119 165) scale(0.3125)" />
+        <rect class="name" x="104" y="192" width="50" height="6" rx="3" />
+        <rect class="detail" x="113" y="204" width="32" height="4" rx="2" />
+        <circle class="badge" cx="158" cy="166" r="4.2" />
+        <text x="158" y="168.5" font-family="Ubuntu Sans, Ubuntu, sans-serif" font-weight="800" font-size="7" text-anchor="middle" fill="#0b0b0e">2</text>
+
+        <rect class="blocked" x="174" y="158" width="74" height="64" rx="9" />
+        <rect class="name" x="183" y="178" width="56" height="6" rx="3" />
+        <rect class="detail" x="183" y="191" width="50" height="4" rx="2" />
+        <rect class="detail" x="183" y="199" width="34" height="4" rx="2" />
+
+        <g class="on-green">
+          <rect class="working" x="256" y="158" width="74" height="64" rx="9" />
+          <rect class="name" x="267" y="178" width="52" height="6" rx="3" />
+          <rect class="detail" x="265" y="191" width="54" height="4" rx="2" />
+          <rect class="detail" x="265" y="199" width="38" height="4" rx="2" />
+
+          <rect class="working" x="338" y="158" width="74" height="64" rx="9" />
+          <rect class="name" x="347" y="178" width="56" height="6" rx="3" />
+          <rect class="detail" x="347" y="191" width="50" height="4" rx="2" />
+          <rect class="detail" x="347" y="199" width="26" height="4" rx="2" />
+        </g>
+
+        <g class="on-dark">
+          <rect class="idle" x="92" y="230" width="74" height="64" rx="9" />
+          <rect class="name" x="108" y="254" width="42" height="6" rx="3" />
+          <rect class="detail" x="117" y="267" width="24" height="4" rx="2" />
+        </g>
+      </svg>
+    </div>
+    <script>
+      if (new URLSearchParams(location.search).get("theme") === "dark")
+        document.documentElement.classList.add("dark");
+    </script>
+  </body>
+</html>

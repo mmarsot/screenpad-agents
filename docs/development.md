@@ -10,7 +10,7 @@
 | `systemd/screenpad-agents.service` | the app's user unit |
 | `install.sh` | installs and uninstalls, as your user |
 | `tests/` | unit tests |
-| `docs/` | this documentation; `docs/images/` holds the screenshots |
+| `docs/` | this documentation; `docs/images/` holds the screenshots, `docs/assets/` the README's banner (see [its README](assets/README.md)) |
 | `AGENTS.md`, `.agents/skills/` | the guide for contributors and coding agents: an index and one skill per area (`.claude/skills` links to it; `CLAUDE.md` imports `AGENTS.md`) |
 | `Makefile`, `pyproject.toml`, `uv.lock` | the development checks and their pinned tools, and the client library's pinned URL; nothing here is installed |
 | `.github/workflows/ci.yml` | CI: the same checks on every push and pull request |
