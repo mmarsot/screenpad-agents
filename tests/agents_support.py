@@ -206,7 +206,8 @@ def fake_inbox(code):
     "replay" for one it saw before; for an id listed in inbox.handled the
     note is in handled/ (drained after its wake), for one in inbox.acked it
     is acknowledged too. When inbox.fail exists it keeps the request id and
-    exits 3, saved but not announced. It writes into no firstmate home."""
+    exits 3, saved but not announced. receipts prints inbox.receipts. It
+    writes into no firstmate home."""
     os.makedirs(os.path.join(code, "bin"), exist_ok=True)
     return write_script(
         os.path.join(code, "bin", "fm-inbox.sh"),
@@ -220,6 +221,9 @@ def fake_inbox(code):
             p = os.path.join(here, name)
             return open(p).read().split() if os.path.exists(p) else []
         args = sys.argv[1:]
+        if args[:1] == ["receipts"]:
+            sys.stdout.write(open(os.path.join(here, "inbox.receipts")).read())
+            sys.exit(0)
         rid = args[args.index("--request-id") + 1] if "--request-id" in args else None
         ids = listed("inbox.ids")
         if rid is not None and rid not in ids:
@@ -323,13 +327,19 @@ class FakeHerdr:
                 raise HerdrError(self.focus_error)
 
 
+# The note id fm-inbox.sh gives a request (fake_inbox's, and FakeFirstmate's).
+NOTE = "1793706159-abc123"
+
+
 class FakeFirstmate:
     """firstmate's client for the loop. board is the URL of the board
     Lavish has open (None: none open); open_board records each URL it
     opened, after waiting for release when the test sets it; request_board
     records the request id of each request in request_ids, failing with
     request_error when it is set, and returns None (fm-inbox.sh's
-    acknowledged replay) for an id in acknowledged."""
+    acknowledged replay) for an id in acknowledged; receipt gives
+    receipts[note id], (None, None) for a note not listed, failing with
+    receipt_error when it is set, and counts its calls in checks."""
 
     BOARD = "http://127.0.0.1:4387/session/b0a2d"
 
@@ -347,6 +357,20 @@ class FakeFirstmate:
         self.request_ids = []
         self.acknowledged = set()
         self.request_error = None
+        self.receipts: dict = {}
+        self.receipt_error = None
+        self.checks = 0
+
+    def board_url(self):
+        if self.board_error:
+            raise FirstmateError(self.board_error)
+        return self.board
+
+    def receipt(self, note_id):
+        self.checks += 1
+        if self.receipt_error:
+            raise FirstmateError(self.receipt_error)
+        return self.receipts.get(note_id, (None, None))
 
     def open_board(self):
         self.board_calls += 1
@@ -369,7 +393,7 @@ class FakeFirstmate:
             raise FirstmateError(self.request_error)
         if request_id in self.acknowledged:
             return None
-        return "created 1793706159-abc123"
+        return ("created", NOTE)
 
     def interrupt(self, task_id):
         self.interrupted.append(task_id)

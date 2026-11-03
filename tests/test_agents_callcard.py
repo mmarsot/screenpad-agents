@@ -13,10 +13,25 @@ from screenpad_agents.callcard import ANSWER_CHARS, TEXT_CHARS, TITLE_CHARS, fit
 ERROR = "fm-bearings-board.sh failed: exit 1: could not read the bearings of the home at /home/u/firstmate " * 3
 
 
+TITLES = {
+    callcard.NO_BOARD,
+    callcard.OPENING,
+    callcard.OPENED,
+    callcard.LATE,
+    callcard.NOT_OPENED,
+    callcard.NOT_REQUESTED,
+}
+REPLY = "On it: building the decisions board now, it should be open in a minute or so. " * 2
+
+
 def cards():
     return {
         "no board": callcard.no_board(),
-        "requested": callcard.requested(),
+        "opening": callcard.opening(),
+        "opening, replied": callcard.opening(REPLY),
+        "opened": callcard.opened(),
+        "late": callcard.late(),
+        "late, replied": callcard.late(REPLY),
         "not opened": callcard.not_opened(ERROR),
         "not requested": callcard.not_requested("fm-inbox.sh note failed: exit 1"),
     }
@@ -48,19 +63,34 @@ class CardTests(unittest.TestCase):
                 self.assertLessEqual(len(card["text"]), TEXT_CHARS)
                 for o in card["options"]:
                     self.assertLessEqual(len(o["label"]), ANSWER_CHARS)
-                # Fixed words are never cut: only an error is.
-                if name != "not opened":
-                    self.assertNotIn("…", card["title"] + card["text"])
+                # Fixed words are never cut: only an error or a reply is.
+                self.assertIn(card["title"], TITLES)
+                if name != "not opened" and "replied" not in name:
+                    self.assertNotIn("…", card["text"])
                 # The stand-in touch bar takes it as the protocol says.
                 parse_ask(FakeClient(), {"op": "ask", "id": "board.1", **card, "timeout": 30})
 
     def test_a_card_with_an_answer_has_no_ok_beside_dismiss(self):
-        self.assertEqual(
-            callcard.no_board()["options"], [{"id": callcard.REQUEST, "label": "Request", "tone": "accept"}]
-        )
-        for name in ("requested", "not opened", "not requested"):
+        answers = {
+            "no board": [{"id": callcard.REQUEST, "label": "Request", "tone": "accept"}],
+            "opened": [{"id": callcard.OPEN, "label": "Open", "tone": "accept"}],
+            "late": [{"id": callcard.REQUEST, "label": "Retry", "tone": "accept"}],
+            "not requested": [{"id": callcard.REQUEST, "label": "Retry", "tone": "accept"}],
+            "opening": [{"id": callcard.OK, "label": "OK"}],
+            "not opened": [{"id": callcard.OK, "label": "OK"}],
+        }
+        for name, options in answers.items():
             with self.subTest(name):
-                self.assertEqual(cards()[name]["options"], [{"id": callcard.OK, "label": "OK"}])
+                self.assertEqual(cards()[name]["options"], options)
+
+    def test_firstmate_s_reply_is_shown_cut_to_the_text_box(self):
+        for name in ("opening, replied", "late, replied"):
+            with self.subTest(name):
+                text = cards()[name]["text"]
+                self.assertTrue(text.startswith("firstmate: On it: building") and text.endswith("…"))
+        self.assertEqual(callcard.late("No: nothing waits.")["text"], "firstmate: No: nothing waits.")
+        self.assertEqual(callcard.late()["text"], callcard.LATE_TEXT)
+        self.assertIn("in 3 minutes", callcard.LATE_TEXT)
 
     def test_an_error_is_cut_to_the_text_box(self):
         text = callcard.not_opened(ERROR)["text"]

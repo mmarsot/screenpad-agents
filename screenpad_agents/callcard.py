@@ -13,22 +13,30 @@ characters). So each card's title fits TITLE_CHARS and each answer
 ANSWER_CHARS, and a text longer than TEXT_CHARS (an error) is cut at a word,
 with an ellipsis; the log keeps it whole. Dismiss closes a card, so one with
 an answer of its own has no OK beside it, and fewer narrow boxes: OK stands
-in for an answer only on a card that just tells. A lower bar (160 px by
+in for an answer only on a card that just tells. firstmate's reply, shown
+on the card, is cut the same way. A lower bar (160 px by
 default) has smaller type, and the same words fit with room to spare.
 """
 
+from .common import BOARD_WAIT
+
 TITLE_CHARS, ANSWER_CHARS, TEXT_CHARS = 16, 8, 120
 
-# The answers: Request asks firstmate for the board; OK only closes the card.
-REQUEST, OK = "request", "ok"
+# The answers: Request (and Retry) asks firstmate for the board, Open opens
+# it, OK only closes the card.
+REQUEST, OPEN, OK = "request", "open", "ok"
 
 NO_BOARD = "No board open"
 NO_BOARD_TEXT = "Request asks firstmate to build the decisions board; Lavish then opens it on the main screen."
-REQUESTED = "Board requested"
-REQUESTED_TEXT = (
-    "firstmate was asked to build the decisions board. Lavish opens it once built; tap Captain's Call again then."
-)
+OPENING = "Opening board…"
+OPENING_TEXT = "firstmate is building the decisions board, about a minute. This card says when it is open."
+OPENED = "Board open"
+OPENED_TEXT = "firstmate built the decisions board. Open shows it on the main screen."
+LATE = "No board yet"
+LATE_TEXT = "firstmate has not opened the decisions board in %d minutes. Retry asks it again." % (BOARD_WAIT // 60)
 NOT_OPENED, NOT_REQUESTED = "Board not opened", "Request failed"
+# What firstmate replied to the request, ahead of its words.
+REPLIED = "firstmate: "
 
 
 def fit(text, limit):
@@ -56,12 +64,28 @@ def card(title, text, answer=None):
     }
 
 
+def _retry():
+    return {"id": REQUEST, "label": "Retry", "tone": "accept"}
+
+
 def no_board():
     return card(NO_BOARD, NO_BOARD_TEXT, {"id": REQUEST, "label": "Request", "tone": "accept"})
 
 
-def requested():
-    return card(REQUESTED, REQUESTED_TEXT)
+def opening(reply=None):
+    """firstmate was asked and the board is not open yet: what firstmate
+    replied, once it has."""
+    return card(OPENING, REPLIED + reply if reply else OPENING_TEXT)
+
+
+def opened():
+    return card(OPENED, OPENED_TEXT, {"id": OPEN, "label": "Open", "tone": "accept"})
+
+
+def late(reply=None):
+    """The wait for the board ended without it: what firstmate replied, or
+    that it said nothing."""
+    return card(LATE, REPLIED + reply if reply else LATE_TEXT, _retry())
 
 
 def not_opened(error):
@@ -69,4 +93,4 @@ def not_opened(error):
 
 
 def not_requested(error):
-    return card(NOT_REQUESTED, error)
+    return card(NOT_REQUESTED, error, _retry())

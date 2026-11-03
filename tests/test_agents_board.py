@@ -4,8 +4,9 @@ the opener in a scope of its own (stand-ins for both here, so nothing opens
 on the screen and no unit is made), asking
 firstmate for it with one fm-inbox.sh note (a stand-in too, writing into no
 firstmate home), and the tap in the loop: the board opened, or the card
-saying none is open, whose Request asks firstmate once."""
+saying none is open (test_agents_boardwait.py follows its Request)."""
 
+import json
 import os
 import signal
 import subprocess
@@ -19,18 +20,12 @@ from agents_support import FakeFirstmate, FakeHerdr, Rig, fake_bearings, read_ca
 from desktop_support import fake_lavish, fake_opener, fake_scope, lavish_listing
 
 from screenpad_agents import callcard
-from screenpad_agents.common import BOARD_REQUEST_HOLD
 from screenpad_agents.firstmate import BOARD_REQUEST, SCOPE, Firstmate, FirstmateError, listed_url
 
 URL = "http://127.0.0.1:4387/session/b2403039846e8e74"
 NO_BOARD = "No board open"
 NO_BOARD_TEXT = "Request asks firstmate to build the decisions board; Lavish then opens it on the main screen."
-REQUESTED_CARD = (
-    "Board requested",
-    "firstmate was asked to build the decisions board. Lavish opens it once built; tap Captain's Call again then.",
-    ["OK"],
-)
-NOT_OPENED, NOT_REQUESTED = "Board not opened", "Request failed"
+NOT_OPENED = "Board not opened"
 
 
 class BoardTests(unittest.TestCase):
@@ -189,7 +184,7 @@ class BoardTests(unittest.TestCase):
 
     def test_the_board_is_asked_for_with_one_inbox_note(self):
         with mock.patch.dict(os.environ, {"FM_HOME": "/home/me/firstmate", "FM_BACKEND": "herdr"}):
-            self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "created 1793706159-abc123")
+            self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), ("created", "1793706159-abc123"))
         # One note on the configured home only, under its request id, its
         # text after --, and nothing else: no board built, no Lavish, no opener.
         calls = read_calls(os.path.join(self.code, "bin", "inbox.jsonl"))
@@ -206,7 +201,7 @@ class BoardTests(unittest.TestCase):
             self.fm.request_board("screenpad-board-1-ab")
         # The same request id again is fm-inbox.sh's replay, not a new note.
         os.remove(fail)
-        self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "replay 1793706159-abc123")
+        self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), ("replay", "1793706159-abc123"))
         # Once firstmate has drained it (the note in handled/, announced but
         # not acknowledged) or acknowledged it, a replay wakes nothing: it is
         # told apart (None), so the app asks again under a new id.
@@ -215,7 +210,7 @@ class BoardTests(unittest.TestCase):
                 f.write("screenpad-board-1-ab\n")
             self.assertIsNone(self.fm.request_board("screenpad-board-1-ab"))
             os.remove(os.path.join(self.code, "bin", listing))
-        self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "replay 1793706159-abc123")
+        self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), ("replay", "1793706159-abc123"))
         os.remove(os.path.join(self.code, "bin", "fm-inbox.sh"))
         with self.assertRaisesRegex(FirstmateError, "firstmate has no bin/fm-inbox.sh"):
             self.fm.request_board("screenpad-board-1-ab")
@@ -228,6 +223,37 @@ class BoardTests(unittest.TestCase):
             fm = Firstmate(self.home, "r", "c", run=lambda *a, done=done, **k: done, inbox=self.fm.inbox)
             with self.assertRaisesRegex(FirstmateError, "fm-inbox.sh note printed no fm-inbox-note.v1"):
                 fm.request_board("screenpad-board-1-ab")
+
+    def test_what_firstmate_did_with_the_note_is_read_from_its_receipts(self):
+        def receipts(pending=(), handled=()):
+            view = {"schema": "fm-inbox-receipts.v1", "pending": list(pending), "handled": list(handled)}
+            with open(os.path.join(self.code, "bin", "inbox.receipts"), "w") as f:
+                json.dump(view, f)
+
+        note = {"id": "1793706159-abc123", "acknowledged": False, "reply": None}
+        receipts(pending=[{"id": "other", "acknowledged": False, "reply": None}, note])
+        with mock.patch.dict(os.environ, {"FM_HOME": "/home/me/firstmate", "FM_BACKEND": "herdr"}):
+            self.assertEqual(self.fm.receipt("1793706159-abc123"), (False, None))
+        reply = {"id": "1793706159-abc123", "body": " Building it now. \n", "cursor": "000000000004"}
+        receipts(handled=[dict(note, acknowledged=True, reply=reply)])
+        self.assertEqual(self.fm.receipt("1793706159-abc123"), (True, "Building it now."))
+        receipts(handled=[dict(note, acknowledged=True)])
+        self.assertEqual(self.fm.receipt("1793706159-abc123"), (True, None))
+        # A note the view left out (its bounds) says nothing either way.
+        receipts()
+        self.assertEqual(self.fm.receipt("1793706159-abc123"), (None, None))
+        # Only the read-only view ran, on the configured home, and no note.
+        calls = read_calls(os.path.join(self.code, "bin", "inbox.jsonl"))
+        self.assertEqual({tuple(c["args"]) for c in calls}, {("receipts",)})
+        self.assertEqual(calls[0]["FM_HOME"], self.home)
+        self.assertEqual(calls[0]["fm"], ["FM_HOME"])
+        for out in ("", "[]\n", '{"schema": "fm-inbox-note.v1"}\n'):
+            done = subprocess.CompletedProcess([], 0, out, "")
+            fm = Firstmate(self.home, "r", "c", run=lambda *a, done=done, **k: done, inbox=self.fm.inbox)
+            with self.subTest(out=out), self.assertRaisesRegex(FirstmateError, "printed no fm-inbox-receipts.v1"):
+                fm.receipt("1793706159-abc123")
+        with self.assertRaisesRegex(FirstmateError, "firstmate has no bin/fm-inbox.sh"):
+            Firstmate(self.home, "r", "c").receipt("1793706159-abc123")
 
     def test_a_board_path_that_is_not_one_is_refused(self):
         for out in ("", "relative/board.html\n", "/a\n/b\n"):
@@ -313,106 +339,6 @@ class BoardTapTests(unittest.TestCase):
         self.assertEqual((self.asked(rig), rig.app._asked), ([], None))
         self.assertEqual((self.herdr.sent, self.firstmate.interrupted, self.firstmate.opened), ([], [], []))
         self.assertEqual(self.firstmate.requests, 0)
-
-    def no_board_card(self, rig):
-        rig.apps.press(rig.client(), "agents", "calls", "tap")
-        rig.until(lambda: [a.title for a in rig.apps.asks.queue] == [NO_BOARD])
-        return rig.apps.asks.queue[0]
-
-    def test_open_decisions_board_asks_firstmate_once(self):
-        rig = self.rig()
-        self.firstmate.board = None
-        rig.apps.asks.choose(self.no_board_card(rig), 0)
-        rig.until(lambda: self.asked(rig) == [REQUESTED_CARD])
-        self.assertEqual(self.firstmate.requests, 1)
-        self.assertIn("asked firstmate for the decisions board: created 1793706159-abc123", rig.logged)
-        # While it is pending, a tap on Captain's Call still looks for the
-        # board, and says it was requested; nothing asks firstmate again.
-        calls = self.firstmate.board_calls
-        rig.apps.event("calls", "up", inside=True)
-        rig.until(lambda: self.firstmate.board_calls == calls + 1)
-        rig.turn(10)
-        self.assertEqual(self.asked(rig), [REQUESTED_CARD])
-        rig.app.request_board()  # a Request chosen on an older card
-        rig.turn(10)
-        self.assertEqual((self.firstmate.requests, self.asked(rig)), (1, [REQUESTED_CARD]))
-        self.assertEqual((self.herdr.sent, self.firstmate.interrupted, self.firstmate.opened), ([], [], []))
-
-    def test_a_request_ends_when_the_board_opens_or_after_the_hold(self):
-        rig = self.rig()
-        self.firstmate.board = None
-        rig.apps.asks.choose(self.no_board_card(rig), 0)
-        rig.until(lambda: self.firstmate.requests == 1)
-        # Past the hold, the card offers to ask again, as a new request.
-        rig.app._requested -= BOARD_REQUEST_HOLD
-        rig.app._request_made -= BOARD_REQUEST_HOLD
-        rig.apps.asks.choose(self.no_board_card(rig), 0)
-        rig.until(lambda: self.firstmate.requests == 2)
-        # Once the board is seen open, a later request asks again at once.
-        self.firstmate.board = FakeFirstmate.BOARD
-        rig.apps.press(rig.client(), "agents", "calls", "tap")
-        rig.until(lambda: rig.app._requested is None)
-        self.assertEqual(self.firstmate.opened, [FakeFirstmate.BOARD])
-        self.firstmate.board = None
-        rig.apps.asks.choose(self.no_board_card(rig), 0)
-        rig.until(lambda: self.firstmate.requests == 3)
-        ids = self.firstmate.request_ids
-        self.assertEqual(len(set(ids)), 3)
-        for rid in ids:
-            self.assertRegex(rid, r"\A[A-Za-z0-9._:-]{1,128}\Z")
-
-    def test_a_failed_request_is_shown_and_can_be_tried_again(self):
-        rig = self.rig()
-        self.firstmate.board = None
-        self.firstmate.request_error = "fm-inbox.sh note failed: exit 1"
-        rig.apps.asks.choose(self.no_board_card(rig), 0)
-        failed = (NOT_REQUESTED, "fm-inbox.sh note failed: exit 1", ["OK"])
-        rig.until(lambda: self.asked(rig) == [failed])
-        self.assertIn("the request for the decisions board failed: fm-inbox.sh note failed: exit 1", rig.logged)
-        self.firstmate.request_error = None
-        rig.apps.asks.choose(self.no_board_card(rig), 0)
-        rig.until(lambda: self.asked(rig) == [REQUESTED_CARD])
-        # The retry repeats the same request, so fm-inbox.sh replays a note
-        # it saved before failing instead of queueing a second one.
-        ids = self.firstmate.request_ids
-        self.assertEqual((len(ids), ids[0]), (2, ids[1]))
-
-    def test_an_acknowledged_replay_is_asked_again_under_a_new_id(self):
-        rig = self.rig()
-        self.firstmate.board = None
-        self.firstmate.request_error = "fm-inbox.sh note failed: exit 3"
-        rig.apps.asks.choose(self.no_board_card(rig), 0)
-        rig.until(lambda: [a.title for a in rig.apps.asks.queue] == [NOT_REQUESTED])
-        # firstmate handled that note meanwhile: the retry's replay wakes
-        # nothing, so the same job asks once more, under a new id, and only
-        # that note makes the card say it was requested.
-        first = self.firstmate.request_ids[0]
-        self.firstmate.acknowledged.add(first)
-        self.firstmate.request_error = None
-        rig.apps.asks.choose(self.no_board_card(rig), 0)
-        rig.until(lambda: self.asked(rig) == [REQUESTED_CARD])
-        ids = self.firstmate.request_ids
-        self.assertEqual(ids[:2], [first, first])
-        self.assertEqual(len(ids), 3)
-        self.assertNotEqual(ids[2], first)
-        self.assertEqual(rig.app._request_id, ids[2])
-        self.assertIn("asked firstmate for the decisions board: created 1793706159-abc123", rig.logged)
-
-    def test_a_failed_request_older_than_the_hold_is_asked_anew(self):
-        rig = self.rig()
-        self.firstmate.board = None
-        self.firstmate.request_error = "fm-inbox.sh note failed: exit 3"
-        rig.apps.asks.choose(self.no_board_card(rig), 0)
-        rig.until(lambda: [a.title for a in rig.apps.asks.queue] == [NOT_REQUESTED])
-        # firstmate may have handled that note since: replaying its id would
-        # wake nothing, so past the hold the retry is a new request.
-        rig.app._request_made -= BOARD_REQUEST_HOLD
-        self.firstmate.request_error = None
-        rig.apps.asks.choose(self.no_board_card(rig), 0)
-        rig.until(lambda: self.asked(rig) == [REQUESTED_CARD])
-        ids = self.firstmate.request_ids
-        self.assertEqual(len(ids), 2)
-        self.assertNotEqual(ids[0], ids[1])
 
     def test_a_failure_is_shown_on_the_card(self):
         rig = self.rig()

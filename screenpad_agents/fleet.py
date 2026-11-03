@@ -51,6 +51,7 @@ class Fleet:
         self.bearings = None
         self.firstmate_error = None
         self.card = None
+        self.board_opening = False  # the app waits for the decisions board
         self._panes = {}
 
     def tiles(self):
@@ -201,6 +202,8 @@ class Fleet:
         text = "%s waiting" % (badge or "none")
         if self.firstmate_error:
             text += " (stale)"
+        if self.board_opening:
+            text += " · opening board"
         return badge and clip(badge, MAX_BADGE), text, "warning" if badge else "neutral"
 
     def _widgets(self):

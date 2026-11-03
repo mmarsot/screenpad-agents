@@ -18,7 +18,8 @@ knows the task's harness and checks what it did:
 
   FM_HOME=<home> <code>/bin/fm-control.sh <task id> interrupt
 
-It and the board's request below are the only firstmate commands that act.
+It and the board's request below are the only firstmate commands that act;
+fm-inbox.sh receipts, below, only reads.
 
 Tapping Captain's Call opens firstmate's decisions board, the Lavish board
 of /bearings lavish, in the browser on the main screen, where the decisions
@@ -44,7 +45,13 @@ can ask it to, with one note in firstmate's inbox,
 which wakes firstmate once; it then builds the board, and Lavish opens it.
 The app keeps one request id per request, so a retry after a failure (the
 note perhaps saved, firstmate not woken) replays that note rather than
-queueing a second one.
+queueing a second one. While it waits for the board, it reads whether
+firstmate has handled that note or replied to it, with fm-inbox.sh's own
+read-only view of its notes (it writes nothing and wakes no one),
+
+  FM_HOME=<home> <code>/bin/fm-inbox.sh receipts
+
+and checks for the board open as a tap does (boardrequest.py).
 """
 
 import json
@@ -83,8 +90,9 @@ BOARD_REQUEST = (
 OPENER = ("gio", "open")
 SCOPE = ("systemd-run", "--user", "--scope", "--collect", "--quiet", "--")
 
-# What fm-inbox.sh note --json prints.
+# What fm-inbox.sh note --json and receipts print.
 NOTE_SCHEMA = "fm-inbox-note.v1"
+RECEIPTS_SCHEMA = "fm-inbox-receipts.v1"
 
 
 class FirstmateError(Exception):
@@ -199,13 +207,12 @@ class Firstmate:
     def request_board(self, request_id):
         """Ask firstmate to build and open its decisions board, with one note
         in its inbox (one wake) under request_id: what fm-inbox.sh reported,
-        "<outcome> <note id>" ("created", or "replay" for a request_id it
-        already has); None when that note is one firstmate has already
-        handled, acknowledged or moved to handled/ (its replay wakes nothing:
-        ask again under a new id); FirstmateError when it refused or failed."""
-        if not self.inbox or not os.access(self.inbox, os.X_OK):
-            raise FirstmateError("firstmate has no bin/fm-inbox.sh")
-        argv = [self.inbox, "note", "--json", "--request-id", request_id, "--", BOARD_REQUEST]
+        (outcome, note id), the outcome "created", or "replay" for a
+        request_id it already has; None when that note is one firstmate has
+        already handled, acknowledged or moved to handled/ (its replay wakes
+        nothing: ask again under a new id); FirstmateError when it refused or
+        failed."""
+        argv = [self._inbox(), "note", "--json", "--request-id", request_id, "--", BOARD_REQUEST]
         done = self._call(argv, "fm-inbox.sh note", INBOX_TIMEOUT)
         try:
             note = json.loads(done.stdout or "")
@@ -218,7 +225,32 @@ class Firstmate:
             isinstance(path, str) and os.path.basename(os.path.dirname(path)) == "handled"
         ):
             return None
-        return "%s %s" % (note.get("outcome"), note.get("id"))
+        return str(note.get("outcome")), str(note.get("id"))
+
+    def receipt(self, note_id):
+        """What firstmate did with its inbox note note_id, from fm-inbox.sh
+        receipts (read-only): (acknowledged, reply), acknowledged True once
+        it is in handled/ and reply the text firstmate replied with, or None;
+        (None, None) when the view does not list that note (its bounds left
+        it out); FirstmateError when it fails or prints no receipts."""
+        done = self._call([self._inbox(), "receipts"], "fm-inbox.sh receipts", INBOX_TIMEOUT)
+        try:
+            view = json.loads(done.stdout or "")
+        except ValueError:
+            view = None
+        if not isinstance(view, dict) or view.get("schema") != RECEIPTS_SCHEMA:
+            raise FirstmateError("fm-inbox.sh receipts printed no %s" % RECEIPTS_SCHEMA)
+        for note in _list(view, "pending") + _list(view, "handled"):
+            if isinstance(note, dict) and note.get("id") == note_id:
+                reply = note.get("reply")
+                body = _text(reply.get("body")) if isinstance(reply, dict) else None
+                return note.get("acknowledged") is True, body
+        return None, None
+
+    def _inbox(self):
+        if not self.inbox or not os.access(self.inbox, os.X_OK):
+            raise FirstmateError("firstmate has no bin/fm-inbox.sh")
+        return self.inbox
 
     def _call(self, argv, what, timeout, home=True, detach=False):
         """Run one of firstmate's commands with FM_HOME (or, home False,
