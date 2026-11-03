@@ -1,13 +1,17 @@
 """no-mistakes as the Runs page reads it: the client against a fake CLI (only
-read-only commands, in the right directory), its TOON reader, and the scan
-of projects and copies, with firstmate's clones and task worktrees."""
+read-only commands, in the right directory), its TOON reader, the scan of
+projects and copies, with firstmate's clones and task worktrees, and a run's
+pull request: which URLs are opened, and opening one through the stand-in
+systemd-run and URL handler (nothing opens on the screen, no unit is made)."""
 
 import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
-from agents_support import write_json
+from agents_support import read_calls, write_json
+from desktop_support import fake_opener, fake_scope
 from runs_support import (
     FakeNoMistakes,
     detail,
@@ -19,8 +23,10 @@ from runs_support import (
     run_row,
 )
 
+from screenpad_agents import runwatch
 from screenpad_agents.config import Runs as RunsSettings
-from screenpad_agents.nomistakes import NoMistakes, NoMistakesError, NotARepo, read_only, toon
+from screenpad_agents.desktop import SCOPE, DesktopError, open_url
+from screenpad_agents.nomistakes import NoMistakes, NoMistakesError, NotARepo, pr_url, read_only, toon
 from screenpad_agents.runwatch import RunsWatch
 
 # no-mistakes 1.106's own output, trimmed: axi in a worktree, and a run in detail.
@@ -248,6 +254,67 @@ class ScanTests(unittest.TestCase):
         self.nm.error = "no-mistakes: No such file or directory"
         with self.assertRaisesRegex(NoMistakesError, "No such file"):
             self.watch([self.other]).scan()
+
+
+class PullRequestTests(unittest.TestCase):
+    def test_only_a_pull_requests_https_url_on_the_forge_is_opened(self):
+        for url in ("https://github.com/mmarsot/screenpad-agents/pull/9", "https://github.com/o/r.js/pull/1234"):
+            self.assertEqual(pr_url(url), url)
+        rejected: tuple[str | None, ...] = (
+            None,
+            "",
+            "12",
+            "#12",
+            "http://github.com/o/r/pull/9",  # not https
+            "https://gitlab.com/o/r/pull/9",  # another host
+            "https://github.com.evil.example/o/r/pull/9",
+            "https://evil.example/github.com/o/r/pull/9",
+            "https://github.com@evil.example/o/r/pull/9",  # a user
+            "https://github.com:8443/o/r/pull/9",  # a port
+            "https://github.com/o/r/pull/9?x=1",
+            "https://github.com/o/r/pull/9#top",
+            "https://github.com/o/r/pull/9/files",
+            "https://github.com/o/r/issues/9",
+            "https://github.com/o/../pull/9",
+            "https://github.com/o/r/pull/0",
+            "https://github.com/o/r/pull/9\n",
+            " https://github.com/o/r/pull/9",
+            "javascript:alert(1)",
+            "--help",
+        )
+        for bad in rejected:
+            self.assertIsNone(pr_url(bad), bad)
+
+    def test_a_pr_opens_in_a_scope_of_its_own_like_the_board(self):
+        with tempfile.TemporaryDirectory() as d:
+            opener, scope = fake_opener(d), fake_scope(d)
+            url = "https://github.com/o/r/pull/9"
+            open_url(url, "opening the PR", scope=[scope, *SCOPE[1:]], opener=[opener, "open"])
+            self.assertEqual(read_calls(os.path.join(d, "opened.jsonl")), [["open", url]])
+            scoped = ["--user", "--scope", "--collect", "--quiet", "--", opener, "open", url]
+            self.assertEqual(read_calls(os.path.join(d, "scoped.jsonl")), [{"fm": [], "args": scoped}])
+            # A scope that cannot be made opens nothing, and says so as the board does.
+            open(os.path.join(d, "scope.fail"), "w").close()
+            with self.assertRaisesRegex(DesktopError, "^opening the PR failed: exit 1$"):
+                open_url(url, "opening the PR", scope=[scope, *SCOPE[1:]], opener=[opener, "open"])
+            self.assertEqual(len(read_calls(os.path.join(d, "opened.jsonl"))), 1)
+            missing = os.path.join(d, "missing", "systemd-run")
+            with self.assertRaisesRegex(DesktopError, "^%s not found$" % missing):
+                open_url(url, "opening the PR", scope=[missing, *SCOPE[1:]], opener=[opener, "open"])
+
+    def test_the_runs_page_opens_a_pr_with_gio_open_through_systemd_run(self):
+        launched = []
+
+        def run(argv, **kw):
+            launched.append((argv, kw.get("start_new_session"), kw.get("stdout")))
+            return subprocess.CompletedProcess(argv, 0, None, None)
+
+        url = "https://github.com/o/r/pull/9"
+        with mock.patch("shutil.which", side_effect=lambda name: "/usr/bin/" + name):
+            with mock.patch("subprocess.run", run):
+                runwatch.open_pr(url)
+        argv = ["/usr/bin/systemd-run", "--user", "--scope", "--collect", "--quiet", "--", "gio", "open", url]
+        self.assertEqual(launched, [(argv, True, subprocess.DEVNULL)])
 
 
 if __name__ == "__main__":

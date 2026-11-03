@@ -1,7 +1,7 @@
 """The Runs page and tile as the touch bar shows them, checked against the
 app protocol by the stand-in touch bar: one row per project, the joins to
 agents and tasks, the warning for more than one active run, the runs
-needing you, and a run's card."""
+needing you, a run's card, and Open PR on a run with a pull request."""
 
 import unittest
 
@@ -232,6 +232,69 @@ class RunsPageTests(unittest.TestCase):
         self.assertTrue(self.cells(b, f)[runcard.LINES].look["lines"][-1].endswith("…"))
         b.set_scan(scan([(API, [])]))
         self.assertIsNone(b.card)
+
+    def test_open_pr_shows_once_the_run_has_a_pull_request_on_the_forge(self):
+        url = "https://github.com/o/r/pull/12"
+        f = fleet()
+        cases = [
+            # (run, its detail, the card's detail): no PR yet, at CI, passed, failed with one.
+            (run(2, "fm/fix", "running"), detail(2, "fm/fix", at="push"), None),
+            (run(2, "fm/fix", "running", url), detail(2, "fm/fix", at="ci"), url),
+            (run(2, "fm/fix", "completed", url), None, url),
+            (run(2, "fm/fix", "failed", url), None, url),
+            (run(2, "fm/fix", "completed", "https://gitlab.com/o/r/pull/12"), None, None),  # not the forge
+            (run(2, "fm/fix", "completed", "http://github.com/o/r/pull/12"), None, None),  # not https
+        ]
+        for r, d, shown in cases:
+            with self.subTest(status=r.status, pr=r.pr):
+                b = self.board([(API, [r])], details=[d] if d else [])
+                cell = self.cells(b, f)[rid(2)]
+                if shown:
+                    self.assertEqual(cell.touch, "long")  # a long press opens the PR too
+                    self.assertTrue(cell.look["text"].endswith("PR #12 · hold: open"), cell.look["text"])
+                else:
+                    self.assertEqual(cell.touch, "tap")
+                    self.assertNotIn("hold", cell.look["text"])
+                self.assertEqual(b.pr_of(f, run_id(2)), shown)
+                b.open_card(run_id(2))
+                cells = self.cells(b, f)
+                if shown:
+                    pr = cells[runcard.PR]
+                    self.assertEqual((pr.col, pr.row, pr.touch), (4, 3, "tap"))
+                    self.assertEqual((pr.look["label"], pr.look["icon"]), ("Open PR #12", ICONS + "/flag.svg"))
+                    self.assertEqual(cells[runcard.STATE].cols, 4)
+                else:
+                    self.assertNotIn(runcard.PR, cells)
+                    self.assertEqual(cells[runcard.STATE].cols, 5)
+        # The card's own read gives the PR before the run list does.
+        b = self.board([(API, [run(2, "fm/fix", "running")])], details=[detail(2, "fm/fix", at="pr")])
+        b.open_card(run_id(2))
+        d = detail(2, "fm/fix", at="ci")
+        d.pr = url
+        b.set_detail(run_id(2), d)
+        self.assertEqual(self.cells(b, f)[runcard.PR].look["label"], "Open PR #12")
+
+    def test_open_pr_says_it_is_opening_then_whether_it_opened(self):
+        url = "https://github.com/o/r/pull/12"
+        b = self.board([(API, [run(2, "fm/fix", "completed", url)])])
+        f = fleet()
+        card = b.open_card(run_id(2))
+        self.assertTrue(card.open_pr(url))
+        self.assertFalse(card.open_pr(url))  # one open at a time
+        pr = self.cells(b, f)[runcard.PR]
+        self.assertEqual((pr.look["label"], pr.touch), ("Opening PR…", "none"))
+        b.set_opened(run_id(2), url, "systemd-run not found")
+        pr = self.cells(b, f)[runcard.PR]
+        self.assertEqual(
+            (pr.look["label"], pr.look["text"], pr.look["tone"], pr.look.get("icon")),
+            ("Open PR #12", "not opened: systemd-run not found", "reject", None),
+        )
+        self.assertTrue(card.open_pr(url))  # a tap tries again
+        b.set_opened(run_id(2), url, None)
+        pr = self.cells(b, f)[runcard.PR]
+        self.assertEqual((pr.look["label"], pr.touch, pr.look["icon"]), ("PR #12 opened", "tap", ICONS + "/flag.svg"))
+        b.set_opened(run_id(3), url, "late")  # another run's: ignored
+        self.assertEqual(self.cells(b, f)[runcard.PR].look["label"], "PR #12 opened")
 
     def test_durations(self):
         self.assertEqual(

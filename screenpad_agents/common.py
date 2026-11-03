@@ -24,6 +24,7 @@ CONFIG = ("screenpad", "agents.toml")
 ICONS = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "icons")
 HELM, CAPTAIN, LIGHTHOUSE = "helm", "captain", "lighthouse"
 BACK_ICON, FOCUS_ICON, INTERRUPT_ICON = "back", "spyglass", "anchor"
+PR_ICON = "flag"
 # What the config error points to: install.sh installs no docs.
 DOCS = "https://github.com/mmarsot/screenpad-agents/blob/main/docs/agents.md"
 
@@ -60,7 +61,8 @@ MIN_ROWS = 2
 # harness to acknowledge, about 5 s; past this it is reported failed.
 CONTROL_TIMEOUT = 60.0
 # Finding and opening the decisions board: fm-bearings-board.sh path, the
-# Lavish session listing (node, about 0.5 s), and the URL handler.
+# Lavish session listing (node, about 0.5 s), and the URL handler (which
+# opens a run's pull request too).
 BOARD_TIMEOUT = 15.0
 LAVISH_TIMEOUT = 15.0
 OPEN_TIMEOUT = 15.0

@@ -15,7 +15,8 @@ a queue (and a pipe that wakes its select):
   (firstmate.py) when Captain's Call is tapped, asks firstmate for one
   when its card's Request is chosen, and checks for it while the app waits
   for it (boardrequest.py);
-- the Runs page's, with [runs]: reads no-mistakes (runwatch.py).
+- the Runs page's, with [runs]: reads no-mistakes, and opens a run's pull
+  request in the browser (runwatch.py).
 
 The loop keeps the connection to the touch bar through the client library's
 Link (retrying every RECONNECT seconds while the daemon is not running or
@@ -63,14 +64,17 @@ from .screen import guarded_send, read_screen
 
 
 class App:
-    def __init__(self, config, herdr, firstmate, socket_path, log=None, clock=time.monotonic, nomistakes=None):
+    def __init__(
+        self, config, herdr, firstmate, socket_path, log=None, clock=time.monotonic, nomistakes=None, opener=None
+    ):
         self.config, self.herdr, self.firstmate = config, herdr, firstmate
         self.socket_path, self.clock = socket_path, clock
         self.log = log or (lambda line: print("screenpad-agents: " + line, file=sys.stderr, flush=True))
         self.fleet = Fleet(config.session, firstmate is not None)
         self.runs = None
         if config.runs is not None and nomistakes is not None:
-            self.runs = RunsWatch(config.runs, nomistakes, config.home, self._post, clock)
+            opens = {"opener": opener} if opener is not None else {}
+            self.runs = RunsWatch(config.runs, nomistakes, config.home, self._post, clock, **opens)
         self.stopping = threading.Event()
         self._results: queue.Queue = queue.Queue()
         self._jobs: queue.Queue = queue.Queue()
@@ -248,9 +252,12 @@ class App:
             self._tell("firstmate", error)
             if self.runs is not None:
                 self.runs.update(self.fleet)
-        elif what in ("runs", "run"):
+        elif what in ("runs", "run", "opened"):
             if what == "runs":
                 self._tell("no-mistakes", rest[1])
+            elif what == "opened":
+                _, url, error = rest
+                self.log("PR %s not opened: %s" % (url, error) if error else "opened PR %s" % url)
             return self.runs is not None and self.runs.result(what, *rest)
         elif what == "screen":
             self.fleet.set_screen(rest[0])

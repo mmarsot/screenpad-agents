@@ -10,7 +10,8 @@ there) is of the run's branch, a copy to the Herdr agent whose cwd it is
 and to the firstmate task whose worktree it is. More than one active run
 for one agent, one repo copy or one branch is the warning: its project's
 widget turns red. Tapping a run opens its card (runcard.py) in place of the
-grid. Nothing here acts on a run.
+grid; a run with a pull request takes a long press too, which opens its card
+and the pull request (runwatch.py). Nothing here acts on a run.
 """
 
 import hashlib
@@ -22,10 +23,13 @@ from screenpad_app.common import MAX_BADGE, MAX_LABEL, MAX_ROWS, MAX_TEXT, MAX_T
 
 from . import runcard
 from .common import LIGHTHOUSE, RUNS_PAGE, RUNS_TILE, icon
+from .nomistakes import pr_url
 
 COLUMNS = 5
 MIN_ROWS = 2
 RUN_CELLS = COLUMNS - 1
+# What a run cell with a pull request adds to its text: a long press opens it.
+HOLD = "hold: open"
 
 
 class Project:
@@ -121,6 +125,13 @@ class View:
         if number.isdigit():
             words.append("PR #" + number)
         return " · ".join(words)
+
+    def pr_url(self, detail=None):
+        """The URL of the run's pull request to open: what no-mistakes gives
+        (detail's, the view's own detail's, else the run list's), and only a
+        pull request's on the forge (nomistakes.pr_url); None otherwise."""
+        detail = detail or self.detail
+        return pr_url(detail.pr if detail is not None and detail.pr else self.run.pr)
 
     def tone(self):
         if self.attention:
@@ -253,6 +264,21 @@ class Runs:
         if self.card is not None and self.card.run_id == run_id:
             self.card.detail, self.card.error = (self.card.detail, error) if error else (detail, None)
 
+    def set_opened(self, run_id, url, error=None):
+        """The open of the open card's pull request ended; ignored for any
+        other run."""
+        if self.card is not None and self.card.run_id == run_id:
+            self.card.pr_opened(url, error)
+
+    def pr_of(self, fleet, run_id):
+        """The pull request URL of run_id to open (View.pr_url), with the
+        open card's own detail when it is that run's."""
+        view = self._view(fleet, run_id)
+        if view is None:
+            return None
+        card = self.card
+        return view.pr_url(card.detail if card is not None and card.run_id == run_id else None)
+
     def card_pane(self, fleet):
         """The pane of the agent of the open card's run, if any."""
         if self.card is None:
@@ -375,6 +401,8 @@ class Runs:
             self._runs[wid] = v.run.id
             cell = {"id": wid, "col": col, "row": row, "label": clip(v.name(), MAX_LABEL), "tone": v.tone()}
             cell["text"] = clip(v.phrase(), MAX_TEXT)
+            if v.pr_url():
+                cell.update({"text": clip(v.phrase() + " · " + HOLD, MAX_TEXT), "touch": "long"})
             if v.duplicate:
                 cell["badge"] = "2+"
             cells.append(cell)
