@@ -69,7 +69,7 @@ class BoardTests(unittest.TestCase):
     def test_opens_the_board_lavish_lists_open(self):
         self.listing(("/elsewhere/other.html", "open", "http://127.0.0.1:4387/session/1"), (self.board, "open", URL))
         with mock.patch.dict(os.environ, {"FM_HOME": "/home/me/firstmate", "FM_BACKEND": "herdr"}):
-            self.assertEqual(self.fm.open_board(), (URL, None))
+            self.assertEqual(self.fm.open_board(), URL)
         self.assertEqual(self.opened(), [["open", URL]])
         # The opener ran in a transient scope of its own: a browser it starts
         # is outside the app's unit and its MemoryMax.
@@ -97,22 +97,19 @@ class BoardTests(unittest.TestCase):
 
         fm = Firstmate(self.home, "r", "c", run=run, board=self.fm.board, lavish=[self.lavish])
         with mock.patch("shutil.which", side_effect=lambda name: "/usr/bin/" + name):
-            self.assertEqual(fm.open_board(), (URL, None))
+            self.assertEqual(fm.open_board(), URL)
         scoped = ["/usr/bin/systemd-run", "--user", "--scope", "--collect", "--quiet", "--", "gio", "open", URL]
         self.assertEqual(launched, [scoped])
 
-    def test_without_systemd_run_the_opener_runs_directly_and_says_so(self):
+    def test_without_systemd_run_nothing_is_opened(self):
+        # Run without a scope, a browser the opener starts would be in the
+        # app's unit and get both OOM-killed: the open fails instead.
         self.listing((self.board, "open", URL))
         missing = os.path.join(self.dir, "missing", "systemd-run")
         self.fm.scope = [missing, *SCOPE[1:]]
-        url, note = self.fm.open_board()
-        self.assertEqual(url, URL)
-        self.assertEqual(
-            note,
-            "%s not found: %s open ran in the app's own cgroup, where a browser it starts counts against it"
-            % (missing, self.opener),
-        )
-        self.assertEqual((self.opened(), self.scoped()), ([["open", URL]], []))
+        with self.assertRaisesRegex(FirstmateError, "^%s not found$" % missing):
+            self.fm.open_board()
+        self.assertEqual((self.opened(), self.scoped()), ([], []))
 
     def test_a_scope_that_cannot_be_made_opens_nothing(self):
         self.listing((self.board, "open", URL))
@@ -128,7 +125,7 @@ class BoardTests(unittest.TestCase):
         self.listing((self.board, "open", URL))
         open(os.path.join(self.dir, "opener.linger"), "w").close()
         start = time.monotonic()
-        self.assertEqual(self.fm.open_board(), (URL, None))
+        self.assertEqual(self.fm.open_board(), URL)
         with open(os.path.join(self.dir, "linger.pid")) as f:
             pid = int(f.read())
         self.addCleanup(os.kill, pid, signal.SIGKILL)
@@ -160,7 +157,7 @@ class BoardTests(unittest.TestCase):
         ):
             with self.subTest(rows=rows):
                 self.listing(*rows)
-                self.assertEqual(self.fm.open_board(), (None, None))
+                self.assertIsNone(self.fm.open_board())
         self.assertEqual(self.opened(), [])
 
     def test_only_a_local_url_is_opened(self):
@@ -272,14 +269,13 @@ class BoardTapTests(unittest.TestCase):
         # Read-only: nothing went to an agent or to firstmate's control.
         self.assertEqual((self.herdr.sent, self.firstmate.interrupted), ([], []))
 
-    def test_an_opener_without_a_scope_is_logged(self):
+    def test_without_systemd_run_the_card_says_the_board_was_not_opened(self):
         rig = self.rig()
-        self.firstmate.board_note = "systemd-run not found: gio open ran in the app's own cgroup"
+        self.firstmate.board_error = "systemd-run not found"
         rig.apps.press(rig.client(), "agents", "calls", "tap")
-        rig.until(
-            lambda: rig.logged == ["opened the decisions board: " + FakeFirstmate.BOARD, self.firstmate.board_note]
-        )
-        self.assertEqual(self.asked(rig), [])
+        rig.until(lambda: self.asked(rig) == [("Decisions board not opened", "systemd-run not found", ["OK"])])
+        self.assertEqual(self.firstmate.opened, [])
+        self.assertEqual(rig.logged, ["the decisions board did not open: systemd-run not found"])
 
     def test_taps_while_it_opens_open_it_once(self):
         rig = self.rig()

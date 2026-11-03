@@ -326,8 +326,7 @@ class FakeHerdr:
 class FakeFirstmate:
     """firstmate's client for the loop. board is the URL of the board
     Lavish has open (None: none open); open_board records each URL it
-    opened, after waiting for release when the test sets it, and returns
-    board_note with it (set: there was no scope to open it in); request_board
+    opened, after waiting for release when the test sets it; request_board
     records the request id of each request in request_ids, failing with
     request_error when it is set, and returns None (fm-inbox.sh's
     acknowledged replay) for an id in acknowledged."""
@@ -342,7 +341,6 @@ class FakeFirstmate:
         self.interrupt_error = None
         self.board: str | None = self.BOARD
         self.board_error = None
-        self.board_note: str | None = None
         self.board_calls = 0
         self.opened = []
         self.release = None
@@ -357,9 +355,9 @@ class FakeFirstmate:
         if self.board_error:
             raise self.board_error if isinstance(self.board_error, Exception) else FirstmateError(self.board_error)
         if self.board is None:
-            return None, None
+            return None
         self.opened.append(self.board)
-        return self.board, self.board_note
+        return self.board
 
     @property
     def requests(self):

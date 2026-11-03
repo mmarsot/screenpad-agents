@@ -33,9 +33,9 @@ scope of its own,
 
 so a browser it starts is never in the app's unit, whose MemoryMax (64M) it
 would count against: a browser started there got the app and itself
-OOM-killed. Without systemd-run (no systemd, so no unit and no limit) gio
-open runs directly, and the app logs that. With no session open nothing is
-built or armed from here: firstmate composes the board. The panel can ask it to, with one note in firstmate's inbox,
+OOM-killed. Without systemd-run nothing is opened. With no session open
+nothing is built or armed from here: firstmate composes the board. The panel
+can ask it to, with one note in firstmate's inbox,
 
   FM_HOME=<home> <code>/bin/fm-inbox.sh note --json --request-id <id> -- <BOARD_REQUEST>
 
@@ -177,24 +177,18 @@ class Firstmate:
 
     def open_board(self):
         """Open the decisions board in the browser, the opener in a scope of
-        its own: (its URL, None), or (its URL, why) when there was no scope
-        to run it in and it ran in the app's own cgroup; (None, None) when no
-        board is open (then nothing is opened); FirstmateError on a failure,
-        systemd-run's (then the opener did not run) or the opener's."""
+        its own: its URL, or None when no board is open (then nothing is
+        opened); FirstmateError on a failure, a missing or failed systemd-run
+        (then the opener did not run) or the opener's."""
         url = self.board_url()
         if url is None:
-            return None, None
-        argv, note = self.opener + [url], None
+            return None
         scope = shutil.which(self.scope[0])
-        if scope:
-            argv = [scope] + self.scope[1:] + argv
-        else:
-            note = "%s not found: %s ran in the app's own cgroup, where a browser it starts counts against it" % (
-                self.scope[0],
-                " ".join(self.opener),
-            )
+        if not scope:
+            raise FirstmateError("%s not found" % self.scope[0])
+        argv = [scope] + self.scope[1:] + self.opener + [url]
         self._call(argv, "opening the board", OPEN_TIMEOUT, home=False, detach=True)
-        return url, note
+        return url
 
     def request_board(self, request_id):
         """Ask firstmate to build and open its decisions board, with one note
