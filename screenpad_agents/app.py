@@ -171,10 +171,15 @@ class App:
                     self._post("board", None, _why(e, FirstmateError))
                 continue
             if job[0] == "request":
+                request_id = job[1]
                 try:
-                    self._post("requested", self.firstmate.request_board(job[1]), None)
+                    note = self.firstmate.request_board(request_id)
+                    if note is None:
+                        request_id = _request_id()
+                        note = self.firstmate.request_board(request_id)
+                    self._post("requested", request_id, note, None)
                 except Exception as e:
-                    self._post("requested", None, _why(e, FirstmateError))
+                    self._post("requested", request_id, None, _why(e, FirstmateError))
                 continue
             _, pane, task_id = job
             try:
@@ -291,12 +296,13 @@ class App:
             self._ask("Decisions board requested", REQUESTED)
             return
         if self._request_id is None or self.clock() - self._request_made >= BOARD_REQUEST_HOLD:
-            self._request_id = "screenpad-board-%d-%s" % (time.time(), secrets.token_hex(4))
-            self._request_made = self.clock()
+            self._request_id, self._request_made = _request_id(), self.clock()
         self._requested = self.clock()
         self._control.put(("request", self._request_id))
 
-    def _board_requested(self, note, error):
+    def _board_requested(self, request_id, note, error):
+        if request_id != self._request_id:
+            self._request_id, self._request_made = request_id, self.clock()
         if error is not None:
             self._requested = None  # the next try repeats this request, under its id
             self.log("the request for the decisions board failed: %s" % error)
@@ -450,3 +456,9 @@ def _why(error, expected):
     """What to show and log for an error a worker caught: an expected one
     says why itself; any other is a bug, named by its type."""
     return str(error) if isinstance(error, expected) else "%s: %s" % (type(error).__name__, error)
+
+
+def _request_id():
+    """A new id for a request of the decisions board, as fm-inbox.sh note
+    --request-id takes it."""
+    return "screenpad-board-%d-%s" % (time.time(), secrets.token_hex(4))

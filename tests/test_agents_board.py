@@ -166,11 +166,11 @@ class BoardTests(unittest.TestCase):
         # The same request id again is fm-inbox.sh's replay, not a new note.
         os.remove(fail)
         self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "replay 1793706159-abc123")
-        # Once firstmate has handled it, a replay wakes nothing: the app must
-        # not hold an old id past BOARD_REQUEST_HOLD (see the loop's tests).
+        # Once firstmate has handled it, a replay wakes nothing: it is told
+        # apart (None), so the app asks again under a new id.
         with open(os.path.join(self.code, "bin", "inbox.handled"), "w") as f:
             f.write("screenpad-board-1-ab\n")
-        self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "replay 1793706159-abc123")
+        self.assertIsNone(self.fm.request_board("screenpad-board-1-ab"))
         os.remove(os.path.join(self.code, "bin", "fm-inbox.sh"))
         with self.assertRaisesRegex(FirstmateError, "firstmate has no bin/fm-inbox.sh"):
             self.fm.request_board("screenpad-board-1-ab")
@@ -314,6 +314,27 @@ class BoardTapTests(unittest.TestCase):
         # it saved before failing instead of queueing a second one.
         ids = self.firstmate.request_ids
         self.assertEqual((len(ids), ids[0]), (2, ids[1]))
+
+    def test_an_acknowledged_replay_is_asked_again_under_a_new_id(self):
+        rig = self.rig()
+        self.firstmate.board = None
+        self.firstmate.request_error = "fm-inbox.sh note failed: exit 3"
+        rig.apps.asks.choose(self.no_board_card(rig), 0)
+        rig.until(lambda: [a.title for a in rig.apps.asks.queue] == ["Decisions board not requested"])
+        # firstmate handled that note meanwhile: the retry's replay wakes
+        # nothing, so the same job asks once more, under a new id, and only
+        # that note makes the card say it was requested.
+        first = self.firstmate.request_ids[0]
+        self.firstmate.acknowledged.add(first)
+        self.firstmate.request_error = None
+        rig.apps.asks.choose(self.no_board_card(rig), 0)
+        rig.until(lambda: self.asked(rig) == [REQUESTED_CARD])
+        ids = self.firstmate.request_ids
+        self.assertEqual(ids[:2], [first, first])
+        self.assertEqual(len(ids), 3)
+        self.assertNotEqual(ids[2], first)
+        self.assertEqual(rig.app._request_id, ids[2])
+        self.assertIn("asked firstmate for the decisions board: queued 1793706159-abc123", rig.logged)
 
     def test_a_failed_request_older_than_the_hold_is_asked_anew(self):
         rig = self.rig()

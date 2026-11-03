@@ -68,6 +68,9 @@ BOARD_REQUEST = (
     "Asked from Captain's Call on the ScreenPad, where no decisions board is open."
 )
 
+# The line fm-inbox.sh note adds to a replay of a note firstmate has handled.
+ACKNOWLEDGED = "firstmate has already acknowledged this note."
+
 
 class FirstmateError(Exception):
     pass
@@ -168,14 +171,18 @@ class Firstmate:
     def request_board(self, request_id):
         """Ask firstmate to build and open its decisions board, with one note
         in its inbox (one wake) under request_id: what fm-inbox.sh reported,
-        "queued <id>", or "replay <id>" for a request_id it already has, or
-        FirstmateError when it refused or failed."""
+        "queued <id>", or "replay <id>" for a request_id it already has; None
+        when that note was one firstmate has already acknowledged (its replay
+        wakes nothing: ask again under a new id); FirstmateError when it
+        refused or failed."""
         if not self.inbox or not os.access(self.inbox, os.X_OK):
             raise FirstmateError("firstmate has no bin/fm-inbox.sh")
         argv = [self.inbox, "note", "--request-id", request_id, "--", BOARD_REQUEST]
         done = self._call(argv, "fm-inbox.sh note", INBOX_TIMEOUT)
-        out = (done.stdout or "").strip().splitlines()
-        return out[0].strip() if out else "queued"
+        out = [line.strip() for line in (done.stdout or "").strip().splitlines()]
+        if ACKNOWLEDGED in out:
+            return None
+        return out[0] if out else "queued"
 
     def _call(self, argv, what, timeout, home=True, detach=False):
         """Run one of firstmate's commands with FM_HOME (or, home False,

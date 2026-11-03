@@ -229,7 +229,7 @@ def fake_inbox(code):
             print("replay 1793706159-abc123")
             handled = os.path.join(here, "inbox.handled")
             if os.path.exists(handled) and rid in open(handled).read().split():
-                print("firstmate has already acknowledged this note.")
+                print("  firstmate has already acknowledged this note.")
             sys.exit(0)
         print("queued 1793706159-abc123")
         print("  " + sys.argv[-1])
@@ -376,7 +376,8 @@ class FakeFirstmate:
     Lavish has open (None: none open); open_board records each URL it
     opened, after waiting for release when the test sets it; request_board
     records the request id of each request in request_ids, failing with
-    request_error when it is set."""
+    request_error when it is set, and returns None (fm-inbox.sh's
+    acknowledged replay) for an id in acknowledged."""
 
     BOARD = "http://127.0.0.1:4387/session/b0a2d"
 
@@ -392,6 +393,7 @@ class FakeFirstmate:
         self.opened = []
         self.release = None
         self.request_ids = []
+        self.acknowledged = set()
         self.request_error = None
 
     def open_board(self):
@@ -412,6 +414,8 @@ class FakeFirstmate:
         self.request_ids.append(request_id)
         if self.request_error:
             raise FirstmateError(self.request_error)
+        if request_id in self.acknowledged:
+            return None
         return "queued 1793706159-abc123"
 
     def interrupt(self, task_id):
