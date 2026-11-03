@@ -11,14 +11,23 @@ from .config import load
 from .firstmate import Firstmate, FirstmateError
 from .fleet import Fleet
 from .herdr import Herdr, HerdrError
+from .nomistakes import NoMistakes, NoMistakesError
+from .runwatch import RunsWatch
 
 
 def clients(config):
     herdr = Herdr(config.herdr, config.session)
     firstmate = None
     if config.home:
+        paths = config.runs is not None and config.runs.firstmate
         firstmate = Firstmate(
-            config.home, config.bearings, config.control, board=config.board, inbox=config.inbox, lavish=config.lavish
+            config.home,
+            config.bearings,
+            config.control,
+            board=config.board,
+            inbox=config.inbox,
+            lavish=config.lavish,
+            paths=paths,
         )
     return herdr, firstmate
 
@@ -26,7 +35,8 @@ def clients(config):
 def cmd_run(args):
     config = load(args.config)
     herdr, firstmate = clients(config)
-    app = App(config, herdr, firstmate, socket_path())
+    nomistakes = NoMistakes(config.runs.command) if config.runs is not None else None
+    app = App(config, herdr, firstmate, socket_path(), nomistakes=nomistakes)
     signal.signal(signal.SIGTERM, lambda *_: app.stop())
     try:
         app.run()
@@ -49,8 +59,15 @@ def cmd_show(args):
             fleet.set_bearings(firstmate.read())
         except FirstmateError as e:
             fleet.set_bearings(None, str(e))
+    watch = None
+    if config.runs is not None:
+        watch = RunsWatch(config.runs, NoMistakes(config.runs.command), config.home, None)
+        try:
+            watch.board.set_scan(watch.scan(*watch.places(fleet)))
+        except NoMistakesError as e:
+            watch.board.set_scan(None, str(e))
     if args.json:
-        print(json.dumps(fleet.messages(), indent=2))
+        print(json.dumps(fleet.messages() + (watch.board.messages(fleet) if watch else []), indent=2))
         return 0
     print("Herdr session %s: %s" % (config.session, fleet.summary()))
     if fleet.herdr_error:
@@ -63,7 +80,21 @@ def cmd_show(args):
         print("Captain's Call: %s" % tile["text"])
         if fleet.firstmate_error:
             print("  " + fleet.firstmate_error)
+    if watch is not None:
+        show_runs(watch.board, fleet)
     return 1 if fleet.herdr_error else 0
+
+
+def show_runs(board, fleet):
+    views = board.views(fleet)
+    print("no-mistakes runs: %s" % board.summary(views))
+    if board.error:
+        print("  " + board.error)
+    for p in board.scan.projects if board.scan else []:
+        print("  %s (%s)%s" % (p.name, p.repo, ": " + p.error if p.error else ""))
+        for v in views[p.repo]:
+            marks = "".join(m for m, on in (("!", v.duplicate), ("*", v.attention)) if on)
+            print("    %-2s %-26s %-36s %-24s %s" % (marks, v.run.id, v.run.branch, v.phrase(), v.pane or "-"))
 
 
 def main(argv=None):

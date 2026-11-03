@@ -391,12 +391,12 @@ def task(id, doing=None):
 class Rig:
     """The touch bar's side (bar_support's Apps on its AppServer) and the app, driven in turns."""
 
-    def __init__(self, test, herdr, firstmate, cfg=None):
+    def __init__(self, test, herdr, firstmate, cfg=None, **app):
         tmp = tempfile.TemporaryDirectory(dir="/tmp")
         test.addCleanup(tmp.cleanup)
         self.path = os.path.join(tmp.name, "screenpad", "touchbar.sock")
         self.logged = []
-        self.app = App(cfg or config(firstmate is not None), herdr, firstmate, self.path, log=self.logged.append)
+        self.app = App(cfg or config(firstmate is not None), herdr, firstmate, self.path, log=self.logged.append, **app)
         test.addCleanup(self.app.close)
         self.server = None
         self.apps = None
@@ -407,7 +407,7 @@ class Rig:
 
     def serve(self):
         self.apps = Apps()
-        self.apps.set_placed(["agents", "calls"])
+        self.apps.set_placed(["agents", "calls", "runs"])
         self.server = AppServer(self.path, self.apps)
         handle = self.apps.handle
 

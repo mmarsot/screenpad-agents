@@ -50,7 +50,7 @@ known-first-party = ["screenpad_agents"]
 known-third-party = ["screenpad_app"]
 
 [tool.ruff.lint.isort.sections]
-test-support = ["agents_support", "bar_support", "desktop_support"]
+test-support = ["agents_support", "bar_support", "desktop_support", "runs_support"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -67,6 +67,7 @@ module = [
     "agents_support",
     "bar_support",
     "desktop_support",
+    "runs_support",
     "test_agents_answers",
     "test_agents_app",
     "test_agents_board",
@@ -75,6 +76,9 @@ module = [
     "test_agents_fleet",
     "test_agents_sources",
     "test_install",
+    "test_runs_app",
+    "test_runs_page",
+    "test_runs_sources",
     "test_skills",
 ]
 disable_error_code = ["func-returns-value", "union-attr", "var-annotated"]

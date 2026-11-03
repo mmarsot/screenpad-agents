@@ -6,6 +6,7 @@ Puts your coding agents on the ASUS ScreenPad's touch bar, as an app of [screenp
 - **firstmate tasks and decisions**, when you use firstmate: an agent whose pane is a task's endpoint is named after the task, and a Captain's Call widget counts the decisions waiting for you. Tapping it opens firstmate's decisions board in the browser on the main screen, or, when none is open, offers to ask firstmate for one; the panel itself answers none.
 - **An agent's card**, when you tap it: the agent's own screen, Focus and Interrupt, and for a Claude Code permission dialog Allow once, Always (a long press) and Deny, sent only if the dialog is still the one drawn.
 - Two **tiles for the bar**, if you give them spots: `agents` (how many agents, how many blocked) and `calls` (the Captain's Call count).
+- Optionally, a **Runs page**: every [no-mistakes](https://github.com/kunchenguid/no-mistakes) run per project and its status, read only, each joined to its agent and firstmate task, a warning when one agent has more than one active run, a run's card with its steps, findings and Focus, and a `runs` tile.
 
 It is installed off and runs only once you write its config. [The agent app](docs/agents.md) explains what it shows, its config and how it reads and acts.
 
@@ -19,7 +20,7 @@ It is installed off and runs only once you write its config. [The agent app](doc
 |---|---|
 | Touch bar | [screenpad-linux](https://github.com/mmarsot/screenpad-linux)'s touch bar, installed and on (`screenpad-touchbar on`), speaking app protocol 2 |
 | Agents | [Herdr](https://herdr.dev), with your agents in one of its sessions |
-| Optional | firstmate, for task names, the Captain's Call count, the decisions board and interrupting a task through its control plane |
+| Optional | firstmate, for task names, the Captain's Call count, the decisions board and interrupting a task through its control plane; no-mistakes, for the Runs page |
 | Python | `/usr/bin/python3` 3.11 or newer with pip (on Ubuntu, `sudo apt install python3-pip`); the program uses only the standard library and the touch bar's client library, which `install.sh` installs next to it |
 
 ## What was tested
@@ -77,6 +78,7 @@ If screenpad-linux installed its own copy of the app, uninstalling this one brin
 | Document | Contents |
 |---|---|
 | [Agent app](docs/agents.md) | what it shows, Captain's Call and the decisions board, an agent's card and answering safely, the keymap, its config, turning it on, how it reads and acts |
+| [Runs page](docs/runs.md) | the no-mistakes runs per project: turning it on, which projects, the joins to agents and tasks, the warning, a run's card, how it reads |
 | [Development](docs/development.md) | code layout, the checks and the test suite |
 | [Touch bar app API](https://github.com/mmarsot/screenpad-linux/blob/main/docs/app-api.md) | in screenpad-linux: the socket protocol this app speaks, and the client library |
 
@@ -87,7 +89,7 @@ make vendor
 python3 -m unittest discover -s tests
 ```
 
-`make vendor` fetches the client library into `vendor/`. The tests need no touch bar, no Herdr and no firstmate: they use stand-ins for all three. `make check` also runs the format, lint and type checks that CI runs; see [Development](docs/development.md). Contributors and coding agents start from [AGENTS.md](AGENTS.md).
+`make vendor` fetches the client library into `vendor/`. The tests need no touch bar, no Herdr, no firstmate and no no-mistakes: they use stand-ins for all four. `make check` also runs the format, lint and type checks that CI runs; see [Development](docs/development.md). Contributors and coding agents start from [AGENTS.md](AGENTS.md).
 
 ## License
 

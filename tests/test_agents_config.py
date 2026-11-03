@@ -12,7 +12,9 @@ from screenpad_agents.common import ConfigError
 from screenpad_agents.config import load, parse
 
 
-class ConfigTests(unittest.TestCase):
+class ConfigFiles(unittest.TestCase):
+    """A temporary directory with fake firstmate checkouts, and agents.toml in it."""
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -32,6 +34,8 @@ class ConfigTests(unittest.TestCase):
             f.write(text)
         return path
 
+
+class ConfigTests(ConfigFiles):
     def test_herdr_only(self):
         c = load(self.write('[herdr]\nsession = "default"\n'))
         self.assertEqual((c.herdr, c.session, c.herdr_poll), (["herdr"], "default", 2.0))
@@ -118,6 +122,54 @@ class ConfigTests(unittest.TestCase):
         # Without [firstmate] nothing of firstmate is read; its paths have no default.
         c = parse("x", {"herdr": {"session": "default"}})
         self.assertEqual((c.home, c.bearings, c.control, c.board, c.inbox), (None, None, None, None, None))
+
+
+class RunsConfigTests(ConfigFiles):
+    """[runs]: the Runs page's opt-in and settings."""
+
+    def test_runs(self):
+        fm = '[firstmate]\nhome = "%s"\ncode = "%s"\n' % (self.home, self.code)
+        c = load(self.write('[herdr]\nsession = "lab"\n'))
+        self.assertIsNone(c.runs)
+        self.assertFalse(clients(c)[0] is None)
+        c = load(self.write('[herdr]\nsession = "lab"\n' + fm + "[runs]\n"))
+        r = c.runs
+        self.assertEqual((r.repos, r.firstmate, r.command, r.poll, r.idle), ([], True, ["no-mistakes"], 20.0, 120.0))
+        self.assertEqual(clients(c)[1].fields, "endpoints,paths")
+        c = load(
+            self.write(
+                '[herdr]\nsession = "lab"\n' + fm + '[runs]\nrepos = ["%s", "%s/"]\nfirstmate = false\n'
+                'command = ["wrap", "no-mistakes"]\npoll = 15\nidle = 600\n' % (self.dir, self.dir)
+            )
+        )
+        r = c.runs
+        self.assertEqual(
+            (r.repos, r.firstmate, r.command, r.poll, r.idle), ([self.dir], False, ["wrap", "no-mistakes"], 15.0, 600.0)
+        )
+        self.assertEqual(clients(c)[1].fields, "endpoints")
+        # Without [firstmate] there is nothing to discover: only the repos.
+        c = load(self.write('[herdr]\nsession = "lab"\n[runs]\nrepos = ["%s"]\n' % self.dir))
+        self.assertEqual((c.runs.repos, c.runs.firstmate), ([self.dir], False))
+
+    def test_runs_errors(self):
+        herdr = '[herdr]\nsession = "x"\n'
+        cases = [
+            ("[runs]\n", "no repos, and no \\[firstmate\\]"),
+            ('[runs]\nrepos = "/x"\n', "repos must be a list of absolute paths"),
+            ('[runs]\nrepos = ["rel"]\n', "repos must be a list of absolute paths"),
+            ('[runs]\nrepos = ["/nonexistent"]\n', "/nonexistent is not a directory"),
+            ('[runs]\nrepos = ["%s"]\nfirstmate = 1\n' % self.dir, "firstmate must be true or false"),
+            ('[runs]\nrepos = ["%s"]\npoll = 5\n' % self.dir, "\\[runs\\] poll must be 10 to 300"),
+            ('[runs]\nrepos = ["%s"]\nidle = 10\n' % self.dir, "\\[runs\\] idle must be 30 to 3600"),
+            ('[runs]\nrepos = ["%s"]\npoll = 60\nidle = 30\n' % self.dir, "idle must be at least its poll"),
+            ('[runs]\nrepos = ["%s"]\ncommand = []\n' % self.dir, "command must be a program"),
+            ('[runs]\nrepos = ["%s"]\nwho = 1\n' % self.dir, "unknown key in \\[runs\\] 'who'"),
+        ]
+        for text, error in cases:
+            with self.subTest(text=text), self.assertRaisesRegex(ConfigError, error):
+                load(self.write(herdr + text))
+        with self.assertRaisesRegex(ConfigError, "runs must be a table"):
+            load(self.write("runs = 1\n" + herdr))
 
 
 class CommandTests(unittest.TestCase):

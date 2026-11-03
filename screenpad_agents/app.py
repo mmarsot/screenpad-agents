@@ -13,7 +13,8 @@ a queue (and a pipe that wakes its select):
 - firstmate's control: interrupts a task's agent through fm-control.sh, which
   takes seconds, so neither reader waits on it, opens the decisions board
   (firstmate.py) when Captain's Call is tapped, and asks firstmate for one
-  when its card's Open decisions board is chosen.
+  when its card's Open decisions board is chosen;
+- the Runs page's, with [runs]: reads no-mistakes (runwatch.py).
 
 The loop keeps the connection to the touch bar through the client library's
 Link (retrying every RECONNECT seconds while the daemon is not running or
@@ -43,10 +44,22 @@ from screenpad_app import Link, clip
 from screenpad_app.common import MAX_TEXT
 
 from . import card as cards
-from .common import APP, BOARD_CARD_TIMEOUT, BOARD_REQUEST_HOLD, CALLS_TILE, FLEET_TILE, PAGE, RECONNECT
+from .common import (
+    APP,
+    BOARD_CARD_TIMEOUT,
+    BOARD_REQUEST_HOLD,
+    CALLS_TILE,
+    FLEET_TILE,
+    PAGE,
+    RECONNECT,
+    RUNS_PAGE,
+    RUNS_TILE,
+)
+from .common import why as _why
 from .firstmate import FirstmateError
 from .fleet import CALLS_WIDGET, Fleet
 from .herdr import HerdrError
+from .runwatch import RunsWatch
 from .screen import guarded_send, read_screen
 
 # The answers of the card that says no board is open.
@@ -57,11 +70,14 @@ REQUESTED = (
 
 
 class App:
-    def __init__(self, config, herdr, firstmate, socket_path, log=None, clock=time.monotonic):
+    def __init__(self, config, herdr, firstmate, socket_path, log=None, clock=time.monotonic, nomistakes=None):
         self.config, self.herdr, self.firstmate = config, herdr, firstmate
         self.socket_path, self.clock = socket_path, clock
         self.log = log or (lambda line: print("screenpad-agents: " + line, file=sys.stderr, flush=True))
         self.fleet = Fleet(config.session, firstmate is not None)
+        self.runs = None
+        if config.runs is not None and nomistakes is not None:
+            self.runs = RunsWatch(config.runs, nomistakes, config.home, self._post, clock)
         self.stopping = threading.Event()
         self._results: queue.Queue = queue.Queue()
         self._jobs: queue.Queue = queue.Queue()
@@ -70,7 +86,8 @@ class App:
         self._wake_r, self._wake_w = os.pipe()
         os.set_blocking(self._wake_r, False)
         os.set_blocking(self._wake_w, False)
-        self.link = Link(socket_path, APP, self.fleet.tiles(), retry=RECONNECT, log=self.log, clock=clock)
+        tiles = self.fleet.tiles() + ([RUNS_TILE] if self.runs else [])
+        self.link = Link(socket_path, APP, tiles, retry=RECONNECT, log=self.log, clock=clock)
         self._threads = []
         self._told = set()
         self._dirty = False
@@ -87,6 +104,8 @@ class App:
         workers = [("herdr", self._herdr_worker)]
         if self.firstmate is not None:
             workers += [("firstmate", self._firstmate_worker), ("control", self._control_worker)]
+        if self.runs is not None:
+            workers.append(("runs", self.runs.worker))
         self._threads = [threading.Thread(target=run, name=name, daemon=True) for name, run in workers]
         for t in self._threads:
             t.start()
@@ -213,9 +232,12 @@ class App:
         if fd is not None and fd in ready:
             for msg in self.link.receive():
                 self.handle(msg)
+        if self.runs is not None:
+            self.runs.showing(self.link.connected)
         if (changed or self._dirty) and self.link.connected:
             self._dirty = False
-            self.link.show(self.fleet.messages())
+            runs = self.runs.board.messages(self.fleet) if self.runs is not None else []
+            self.link.show(self.fleet.messages() + runs)
 
     def _drain(self):
         try:
@@ -240,10 +262,18 @@ class App:
             if had_card and self.fleet.card is None:
                 self._jobs.put(("watch", None))
             self._tell("herdr", error)
+            if self.runs is not None:
+                self.runs.update(self.fleet)
         elif what == "bearings":
             value, error = rest
             self.fleet.set_bearings(value, error)
             self._tell("firstmate", error)
+            if self.runs is not None:
+                self.runs.update(self.fleet)
+        elif what in ("runs", "run"):
+            if what == "runs":
+                self._tell("no-mistakes", rest[1])
+            return self.runs is not None and self.runs.result(what, *rest)
         elif what == "screen":
             self.fleet.set_screen(rest[0])
         elif what == "answered":
@@ -368,11 +398,17 @@ class App:
                 self.request_board()
         elif op == "event" and msg.get("page") == PAGE and msg.get("type") in ("tap", "long"):
             self._touch(msg.get("widget"), msg["type"])
+        elif op == "event" and msg.get("page") == RUNS_PAGE and self.runs is not None:
+            changed, pane = self.runs.touch(msg.get("widget"), msg.get("type"), self.fleet)
+            self._dirty = self._dirty or changed
+            self._focus_pane(pane)
         elif op == "event" and msg.get("type") == "up" and msg.get("inside") is True:
             if msg.get("tile") == FLEET_TILE:
                 self._focus_pane(self.fleet.first_blocked())
             elif msg.get("tile") == CALLS_TILE:
                 self.captains_call()
+            elif msg.get("tile") == RUNS_TILE and self.runs is not None:
+                self._focus_pane(self.runs.board.first_attention_pane(self.fleet))
 
     def _touch(self, widget, touch):
         card = self.fleet.shown_card()
@@ -441,6 +477,8 @@ class App:
         self._read_firstmate.set()
         self._jobs.put(None)
         self._control.put(None)
+        if self.runs is not None:
+            self.runs.stop()
         self.link.close()
         for t in self._threads:
             t.join(timeout=2.0)
@@ -450,12 +488,6 @@ class App:
             for fd in (self._wake_r, self._wake_w):
                 os.close(fd)
             self._wake_r = self._wake_w = -1
-
-
-def _why(error, expected):
-    """What to show and log for an error a worker caught: an expected one
-    says why itself; any other is a bug, named by its type."""
-    return str(error) if isinstance(error, expected) else "%s: %s" % (type(error).__name__, error)
 
 
 def _request_id():

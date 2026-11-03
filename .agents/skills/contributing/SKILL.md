@@ -42,13 +42,14 @@ One command each; none needs root, a touch bar, Herdr or firstmate. The Python t
 |---|---|
 | [README.md](../../../README.md) | overview, what it needs, what was tested, installing, updating and uninstalling, troubleshooting the install |
 | [docs/agents.md](../../../docs/agents.md) | the agent app: what it shows, its config, turning it on, how it reads and acts, troubleshooting |
+| [docs/runs.md](../../../docs/runs.md) | the Runs page: turning it on, which projects, the joins, the warning, a run's card, how it reads, troubleshooting |
 | [docs/development.md](../../../docs/development.md) | code layout, the client library's pin, the checks, what the tests cover, the screenshots |
 
 The touch bar, its config and the app protocol are documented in [screenpad-linux](https://github.com/mmarsot/screenpad-linux); link its pages by URL rather than copying them.
 
 ## Tests
 
-- `tests/` holds stdlib `unittest` tests, one file per area: `test_agents_*.py` (the agent app; the [agents](../agents/SKILL.md) skill lists them), `test_install.py` (`install.sh` and the library's pin), `test_skills.py` (the skills and this index). `agents_support.py` holds what the app's tests share and puts the checkout and `vendor/` on `sys.path`; `bar_support.py` is the stand-in touch bar; `desktop_support.py` the stand-ins for `lavish-axi`, the URL handler and `systemd-run`. isort keeps the support modules imported before the package (`[tool.ruff.lint.isort]` in `pyproject.toml`).
+- `tests/` holds stdlib `unittest` tests, one file per area: `test_agents_*.py` and `test_runs_*.py` (the agent app and its Runs page; the [agents](../agents/SKILL.md) skill lists them), `test_install.py` (`install.sh` and the library's pin), `test_skills.py` (the skills and this index). `agents_support.py` holds what the app's tests share and puts the checkout and `vendor/` on `sys.path`, `runs_support.py` the Runs page's fakes; `bar_support.py` is the stand-in touch bar; `desktop_support.py` the stand-ins for `lavish-axi`, the URL handler and `systemd-run`. isort keeps the support modules imported before the package (`[tool.ruff.lint.isort]` in `pyproject.toml`).
 - A new test goes in the file of its area; a new area gets its own file, added to the test modules listed under `[[tool.mypy.overrides]]` in `pyproject.toml`.
 
 ## Skills are part of the code
