@@ -18,7 +18,8 @@ header), so a cell is a box of about 456 by 219 px, its label 44 px and its
 text 30 px, wrapping, under the label: by the extension's sizes
 (screenpad-linux's gnome-shell widgets.js), a one-cell box holds about 16
 characters of label and three lines of text, about 72 characters
-(TEXT_CHARS), a two-cell box about 36 and 150 (WIDE_TEXT_CHARS). Every text
+(TEXT_CHARS), a two-cell box about 36 and 150 (WIDE_TEXT_CHARS); a call's
+label is fitted to MAX_LABEL (32, the protocol's label limit), within those 36. Every text
 is fitted to its box at a word, with an ellipsis, so nothing is cut by the
 box; the whole of a call is on firstmate's decisions board. A lower bar
 (160 px by default) gives taller boxes, and the same words fit.

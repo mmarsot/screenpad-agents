@@ -151,6 +151,31 @@ class BoardWaitTests(unittest.TestCase):
         ids = self.firstmate.request_ids
         self.assertEqual(ids[0], ids[1])
 
+    def test_retry_with_the_board_open_since_writes_no_note(self):
+        rig = self.rig()
+        self.request(rig)
+        rig.until(lambda: self.firstmate.checks >= 1)
+        rig.app.board.since -= BOARD_WAIT
+        rig.until(lambda: self.button(rig) == LATE)
+        # firstmate opens the board after the wait ended: the button still
+        # says Retry, and a tap on it finds the board rather than asking again.
+        self.firstmate.board = FakeFirstmate.BOARD
+        self.tap(rig, "late")
+        rig.until(lambda: self.button(rig) == OPEN)
+        rig.turn(10)
+        self.assertEqual((self.firstmate.requests, rig.app.board.waiting()), (1, False))
+        self.assertEqual(self.firstmate.opened, [])
+
+    def test_a_look_that_fails_before_a_request_still_asks(self):
+        rig = self.rig()
+        rig.apps.event("calls", "up", inside=True)
+        rig.until(lambda: self.button(rig)[0] == "call.board.none")
+        self.firstmate.board_error = "lavish-axi failed: exit 1"
+        self.tap(rig, "none")
+        rig.until(lambda: self.firstmate.requests == 1)
+        rig.until(lambda: rig.app.board.note == NOTE)
+        self.assertEqual(self.button(rig), OPENING)
+
     def test_a_check_that_fails_is_logged_once_and_the_wait_goes_on(self):
         rig = self.rig()
         self.firstmate.receipt_error = "fm-inbox.sh receipts failed: exit 1"

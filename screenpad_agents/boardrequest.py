@@ -11,7 +11,9 @@ Opening the Captain's Call view on the Agents page looks for the board, so
 the button says Open board or Request board; the button's Open board looks
 again and opens it when Lavish has it open, and the calls tile opens it
 straight away. Request board asks firstmate with one inbox note, and the
-button and the Captain's Call widget say at once that the board is opening.
+button and the Captain's Call widget say at once that the board is opening;
+the note is written only when a look just before finds no board open (a
+board found ends the wait, and the button opens it).
 Meanwhile the control thread checks every BOARD_POLL seconds whether the
 board is open (fm-bearings-board.sh path and Lavish's listing) and what
 firstmate did with the note (fm-inbox.sh receipts, read-only): handled, or
@@ -216,6 +218,13 @@ class BoardRequest:
         return True
 
     def _request(self, request_id):
+        try:
+            url = self.firstmate.board_url()
+        except Exception:
+            url = None
+        if url is not None:
+            self.post("look", url, None)
+            return
         try:
             note = self.firstmate.request_board(request_id)
             if note is None:
