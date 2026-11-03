@@ -3,8 +3,10 @@ fm-bearings-board.sh path and Lavish's session listing, opening its URL with
 the opener in a scope of its own (stand-ins for both here, so nothing opens
 on the screen and no unit is made), asking
 firstmate for it with one fm-inbox.sh note (a stand-in too, writing into no
-firstmate home), and the tap in the loop: the board opened, or the card
-saying none is open (test_agents_boardwait.py follows its Request)."""
+firstmate home), and the taps in the loop: the calls tile opening the board, the
+Captain's Call widget opening its view in place and looking for the board,
+and the board's button saying what was found (test_agents_boardwait.py
+follows its Request board)."""
 
 import json
 import os
@@ -19,13 +21,10 @@ from unittest import mock
 from agents_support import FakeFirstmate, FakeHerdr, Rig, fake_bearings, read_calls, task
 from desktop_support import fake_lavish, fake_opener, fake_scope, lavish_listing
 
-from screenpad_agents import callcard
+from screenpad_agents.callpage import BUTTONS, TEXT_CHARS
 from screenpad_agents.firstmate import BOARD_REQUEST, SCOPE, Firstmate, FirstmateError, listed_url
 
 URL = "http://127.0.0.1:4387/session/b2403039846e8e74"
-NO_BOARD = "No board open"
-NO_BOARD_TEXT = "Request asks firstmate to build the decisions board; Lavish then opens it on the main screen."
-NOT_OPENED = "Board not opened"
 
 
 class BoardTests(unittest.TestCase):
@@ -270,46 +269,88 @@ class BoardTapTests(unittest.TestCase):
 
     def rig(self):
         rig = Rig(self, self.herdr, self.firstmate)
-        rig.apps.asks.set_available(True)
         rig.until(lambda: rig.widgets() == ["calls", "agent.w1.p1"])
         rig.until(lambda: rig.apps.provided().get("calls", {}).get("badge") == "2")
         return rig
 
-    def asked(self, rig):
-        return [(a.title, a.text, [o["label"] for o in a.options]) for a in rig.apps.asks.queue]
+    def button(self, rig, page="calls"):
+        """The board's button on page: its id, label and text."""
+        shown = rig.apps.pages[page].widgets
+        w = next((w for w in shown if w.id.startswith("call.board.")), None)
+        return w and (w.id, w.look.get("label"), w.look.get("text"))
 
-    def test_a_tap_opens_the_board_and_reads_firstmate_again(self):
+    def test_the_calls_tile_opens_the_board_and_reads_firstmate_again(self):
         rig = self.rig()
         reads = self.firstmate.reads
-        for kind in ("down", "cancel", "long"):
-            rig.apps.press(rig.client(), "agents", "calls", kind)
         rig.apps.event("calls", "down")
         rig.apps.event("calls", "up", inside=False)
         rig.turn(10)
         self.assertEqual(self.firstmate.board_calls, 0)
-        rig.apps.press(rig.client(), "agents", "calls", "tap")
+        rig.apps.event("calls", "up", inside=True)
         rig.until(lambda: self.firstmate.opened == [FakeFirstmate.BOARD])
         rig.until(lambda: self.firstmate.reads == reads + 1)
         rig.until(lambda: rig.logged == ["opened the decisions board: " + FakeFirstmate.BOARD])
-        rig.apps.event("calls", "up", inside=True)
-        rig.until(lambda: len(self.firstmate.opened) == 2)
-        self.assertEqual(self.asked(rig), [])
+        rig.until(lambda: self.button(rig) == ("call.board.shown", "Open board", "shown on the main screen"))
+        # The Agents page keeps its grid, and nothing was asked in the bar.
+        self.assertEqual(rig.widgets(), ["calls", "agent.w1.p1"])
+        self.assertEqual(rig.apps.asks.queue, [])
         # Read-only: nothing went to an agent or to firstmate's control.
+        self.assertEqual((self.herdr.sent, self.firstmate.interrupted, self.firstmate.requests), ([], [], 0))
+
+    def test_the_widget_opens_the_view_in_place_and_looks_for_the_board(self):
+        rig = self.rig()
+        reads = self.firstmate.reads
+        for kind in ("down", "cancel", "long"):
+            rig.apps.press(rig.client(), "agents", "calls", kind)
+        rig.turn(10)
+        self.assertEqual((rig.widgets(), self.firstmate.looks), (["calls", "agent.w1.p1"], 0))
+        rig.apps.press(rig.client(), "agents", "calls", "tap")
+        # The fake's bearings count two calls but name none: the board has them.
+        rig.until(lambda: (rig.widgets() or [""])[0] == "call.count")
+        self.assertEqual(rig.widgets()[:2] + rig.widgets()[3:], ["call.count", "call.back", "call.none"])
+        # It looked for the board (without opening it), and read firstmate.
+        rig.until(lambda: self.button(rig, "agents") == ("call.board.open", "Open board", BUTTONS["open"][1]))
+        rig.until(lambda: self.firstmate.reads > reads)
+        self.assertEqual((self.firstmate.looks, self.firstmate.opened), (1, []))
+        # Its button opens the board; the calls page shows the same state.
+        self.assertEqual(self.button(rig), self.button(rig, "agents"))
+        rig.apps.press(rig.client(), "agents", "call.board.open", "tap")
+        rig.until(lambda: self.firstmate.opened == [FakeFirstmate.BOARD])
+        rig.until(lambda: self.button(rig, "agents")[0] == "call.board.shown")
+        # Back is the grid again.
+        rig.apps.press(rig.client(), "agents", "call.back", "tap")
+        rig.until(lambda: rig.widgets() == ["calls", "agent.w1.p1"])
+        self.assertEqual((self.herdr.sent, self.firstmate.interrupted, self.firstmate.requests), ([], [], 0))
+
+    def test_no_board_open_offers_request_and_builds_nothing(self):
+        rig = self.rig()
+        self.firstmate.board = None
+        rig.apps.event("calls", "up", inside=True)
+        none = ("call.board.none", "Request board", BUTTONS["none"][1])
+        rig.until(lambda: self.button(rig) == none)
+        self.assertEqual(rig.logged, ["no decisions board is open"])
+        rig.apps.press(rig.client(), "agents", "calls", "tap")
+        rig.until(lambda: self.button(rig, "agents") == none)
+        rig.turn(10)
+        self.assertEqual((self.firstmate.opened, self.firstmate.requests, rig.apps.asks.queue), ([], 0, []))
         self.assertEqual((self.herdr.sent, self.firstmate.interrupted), ([], []))
 
-    def test_without_systemd_run_the_card_says_the_board_was_not_opened(self):
+    def test_a_tap_on_a_button_the_page_no_longer_shows_does_nothing(self):
         rig = self.rig()
-        self.firstmate.board_error = "systemd-run not found"
-        rig.apps.press(rig.client(), "agents", "calls", "tap")
-        rig.until(lambda: self.asked(rig) == [(NOT_OPENED, "systemd-run not found", ["OK"])])
-        self.assertEqual(self.firstmate.opened, [])
-        self.assertEqual(rig.logged, ["the decisions board did not open: systemd-run not found"])
+        self.firstmate.board = None
+        for widget in ("call.board.none", "call.board.late", "call.count", "nothing"):
+            rig.apps.press(rig.client(), "calls", widget, "tap")
+        rig.apps.press(rig.client(), "calls", "call.board.idle", "long")
+        rig.turn(10)
+        self.assertEqual((self.firstmate.board_calls, self.firstmate.requests), (0, 0))
+        rig.apps.press(rig.client(), "calls", "call.board.idle", "tap")
+        rig.until(lambda: self.button(rig) == ("call.board.none", "Request board", BUTTONS["none"][1]))
 
     def test_taps_while_it_opens_open_it_once(self):
         rig = self.rig()
         self.firstmate.release = threading.Event()
         for _ in range(3):
-            rig.apps.press(rig.client(), "agents", "calls", "tap")
+            rig.apps.event("calls", "up", inside=True)
             rig.turn(3)
         rig.until(lambda: self.firstmate.board_calls == 1)
         self.firstmate.release.set()
@@ -317,67 +358,39 @@ class BoardTapTests(unittest.TestCase):
         rig.turn(10)
         self.assertEqual(self.firstmate.board_calls, 1)
 
-    def test_no_board_open_shows_a_card_and_builds_nothing(self):
+    def test_a_failure_is_shown_on_the_button(self):
         rig = self.rig()
-        self.firstmate.board = None
-        rig.apps.press(rig.client(), "agents", "calls", "tap")
-        card = (NO_BOARD, NO_BOARD_TEXT, ["Request"])
-        rig.until(lambda: self.asked(rig) == [card])
-        self.assertEqual(self.firstmate.opened, [])
-        self.assertEqual(rig.logged, ["no decisions board is open"])
-        # A second tap replaces the card rather than queueing another.
+        self.firstmate.board_error = "systemd-run not found"
         rig.apps.event("calls", "up", inside=True)
-        rig.until(lambda: self.firstmate.board_calls == 2)
-        rig.turn(10)
-        self.assertEqual(self.asked(rig), [card])
-        # Its only answer is Request: the card's own Dismiss closes it, and
-        # does nothing more: no note to firstmate either.
-        ask = rig.apps.asks.queue[0]
-        self.assertEqual(ask.options, [{"id": callcard.REQUEST, "label": "Request", "tone": "accept"}])
-        rig.apps.asks.dismiss(ask)
-        rig.turn(10)
-        self.assertEqual((self.asked(rig), rig.app._asked), ([], None))
-        self.assertEqual((self.herdr.sent, self.firstmate.interrupted, self.firstmate.opened), ([], [], []))
-        self.assertEqual(self.firstmate.requests, 0)
-
-    def test_a_failure_is_shown_on_the_card(self):
-        rig = self.rig()
-        self.firstmate.board_error = "lavish-axi failed: server unreachable"
-        rig.apps.press(rig.client(), "agents", "calls", "tap")
-        rig.until(lambda: self.asked(rig) == [(NOT_OPENED, self.firstmate.board_error, ["OK"])])
-        self.assertEqual(rig.logged, ["the decisions board did not open: lavish-axi failed: server unreachable"])
+        rig.until(
+            lambda: self.button(rig) == ("call.board.unopened", "Open board", "not opened: systemd-run not found")
+        )
+        self.assertEqual(rig.logged, ["the decisions board did not open: systemd-run not found"])
         self.firstmate.board_error = RuntimeError("boom")
-        rig.apps.press(rig.client(), "agents", "calls", "tap")
-        rig.until(lambda: self.asked(rig) == [(NOT_OPENED, "RuntimeError: boom", ["OK"])])
-        # A long error is cut at a word to fit the card; the log keeps it whole.
+        rig.apps.press(rig.client(), "calls", "call.board.unopened", "tap")
+        rig.until(lambda: self.button(rig)[2] == "not opened: RuntimeError: boom")
+        # A long error is cut at a word to fit the button; the log keeps it whole.
         error = "lavish-axi failed: " + "the session listing could not be read " * 5
         self.firstmate.board_error = error
-        rig.apps.press(rig.client(), "agents", "calls", "tap")
-        rig.until(lambda: [a.text.startswith("lavish-axi") for a in rig.apps.asks.queue] == [True])
-        self.assertEqual(rig.apps.asks.queue[0].title, NOT_OPENED)
-        text = rig.apps.asks.queue[0].text
-        self.assertLessEqual(len(text), callcard.TEXT_CHARS)
-        self.assertTrue(text.endswith("…") and " ".join(error.split()).startswith(text[:-1]))
+        rig.apps.event("calls", "up", inside=True)
+        rig.until(lambda: self.button(rig)[2].startswith("not opened: lavish-axi"))
+        text = self.button(rig)[2]
+        self.assertLessEqual(len(text), TEXT_CHARS)
+        self.assertTrue(text.endswith("…") and ("not opened: " + " ".join(error.split())).startswith(text[:-1]))
         self.assertIn("the decisions board did not open: " + error, rig.logged)
         self.firstmate.board_error = None
-        rig.apps.press(rig.client(), "agents", "calls", "tap")
+        rig.apps.press(rig.client(), "calls", "call.board.unopened", "tap")
         rig.until(lambda: self.firstmate.opened == [FakeFirstmate.BOARD])
-
-    def test_a_card_the_bar_cannot_show_is_logged(self):
-        rig = self.rig()
-        rig.apps.asks.set_available(False)
-        self.firstmate.board = None
-        rig.apps.press(rig.client(), "agents", "calls", "tap")
-        rig.until(lambda: "the touch bar could not show the board's card" in rig.logged)
-        self.assertIsNone(rig.app._asked)
 
     def test_without_firstmate_a_tap_opens_nothing(self):
         rig = Rig(self, self.herdr, None)
         rig.until(lambda: rig.widgets() == ["agent.w1.p1"])
         rig.apps.event("calls", "up", inside=True)
         rig.app.captains_call()
+        rig.app.open_calls()
         rig.turn(5)
-        self.assertEqual(self.firstmate.board_calls, 0)
+        self.assertEqual((self.firstmate.board_calls, self.firstmate.looks), (0, 0))
+        self.assertNotIn("calls", rig.apps.pages)
 
 
 if __name__ == "__main__":

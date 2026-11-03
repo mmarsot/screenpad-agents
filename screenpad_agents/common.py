@@ -15,6 +15,7 @@ CALLS_TILE = "calls"
 PAGE = "agents"
 RUNS_TILE = "runs"
 RUNS_PAGE = "runs"
+CALLS_PAGE = "calls"
 
 CONFIG = ("screenpad", "agents.toml")
 # The app's icons: SVGs in icons/ next to the package, in the checkout as in
@@ -65,8 +66,6 @@ LAVISH_TIMEOUT = 15.0
 OPEN_TIMEOUT = 15.0
 # Asking firstmate for the board: one note in its inbox (fm-inbox.sh note).
 INBOX_TIMEOUT = 15.0
-# The card that says no board is open stays this long, unless dismissed.
-BOARD_CARD_TIMEOUT = 30
 # After asking firstmate for the board, how long the app waits for it to be
 # open (seconds; building it takes about a minute): taps meanwhile queue no
 # second note, and the card then offers to ask again. While it waits it

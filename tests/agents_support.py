@@ -360,8 +360,10 @@ class FakeFirstmate:
         self.receipts: dict = {}
         self.receipt_error = None
         self.checks = 0
+        self.looks = 0
 
     def board_url(self):
+        self.looks += 1
         if self.board_error:
             raise FirstmateError(self.board_error)
         return self.board

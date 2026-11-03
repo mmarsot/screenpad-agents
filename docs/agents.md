@@ -4,14 +4,14 @@
 
 - **every agent [Herdr](https://herdr.dev) reports**, one large widget each on the [apps page](https://github.com/mmarsot/screenpad-linux/blob/main/docs/touchbar.md#the-two-pages), colored by Herdr's own state: green while working, amber while blocked (waiting for you), grey when idle or unknown. Herdr is the authority on which agents run and in what state; the app only shows what it says.
 - **which firstmate task each agent is**, when you use firstmate: an agent whose pane is a task's recorded endpoint is named after the task, with what the task is doing. Agents outside firstmate still show, named after their directory.
-- **how many Captain's Calls are waiting** in firstmate: decisions and contributions that need you. Tapping the count opens [firstmate's decisions board](#captains-call-and-the-decisions-board) in your browser, on the main screen, where you answer them.
+- **how many Captain's Calls are waiting** in firstmate, decisions and contributions that need you, and **which ones**, on [Captain's Call's page](#captains-call-and-the-decisions-board), with a button that opens firstmate's decisions board in your browser on the main screen, where you answer them, or asks firstmate to build it.
 - **an agent's card**, when you tap it: the agent's own screen, Focus and Interrupt, and when it waits on a Claude Code permission dialog, the answers: Allow once, Always and Deny.
-- two **tiles for the bar**, if you give them spots: `agents` (a ship's helm, with how many agents are blocked) and `calls` (the captain's cap, with the Captain's Call count).
+- two **tiles for the bar**, if you give them spots: `agents` (a ship's helm, with how many agents are blocked) and `calls` (the captain's cap, with the Captain's Call count); and a third page, **Captain's Call** (`calls`), which a `page` item on the bar opens.
 - optionally, with `[runs]` in its config, a second page, **[Runs](runs.md)**: your projects' no-mistakes runs and their status, each joined to its agent and task, with a warning when one agent has more than one active run, and a `runs` tile.
 
-![The Agents page: Captain's Call with the captain's cap and 2 waiting, then fix-login-redirect blocked in amber, web-dark-mode and docs-install-guide working in green, and dotfiles idle in grey; the bar above shows the agents tile (the helm, badge 1) and the calls tile (the cap, badge 2)](images/agents-page.png)
+![The Agents page: Captain's Call with the captain's cap and 2 waiting, then fix-login-redirect blocked in amber, web-dark-mode and docs-install-guide working in green, and dotfiles idle in grey; the bar above shows the agents tile (the helm, badge 1) and Captain's Call's page item (the cap, badge 2)](images/agents-page.png)
 
-*The Agents page with four agents, three of them firstmate tasks, and the `agents` and `calls` tiles in the bar (208 px high). Rendered by the extension in a headless GNOME Shell 50.1, from the app's own page and tiles fed to the daemon's own code, with a stand-in Herdr and firstmate reader.*
+*The Agents page with four agents, three of them firstmate tasks, and the `agents` tile and Captain's Call's page item (`page = "calls"`) in the bar (208 px high). Rendered by the extension in a headless GNOME Shell 50.1, from the app's own page and tiles fed to the daemon's own code, with a stand-in Herdr and firstmate reader.*
 
 ## Its icons
 
@@ -20,13 +20,13 @@ The app draws itself with its own icons, SVGs in `icons/` that `install.sh` inst
 | Icon | Where |
 |---|---|
 | a ship's helm (`helm.svg`) | the Agents page in the home page's list, and the `agents` tile |
-| the captain's cap (`captain.svg`) | Captain's Call: the widget and the `calls` tile |
+| the captain's cap (`captain.svg`) | Captain's Call: the widget, its page and the `calls` tile |
 | a lighthouse (`lighthouse.svg`) | the [Runs](runs.md) page and the `runs` tile |
-| a back arrow (`back.svg`), a spyglass (`spyglass.svg`), an anchor (`anchor.svg`) | Back, Focus and Interrupt on [an agent's card](#an-agents-card) (Back and Focus on a run's card) |
+| a back arrow (`back.svg`), a spyglass (`spyglass.svg`), an anchor (`anchor.svg`) | Back, Focus and Interrupt on [an agent's card](#an-agents-card) (Back and Focus on a run's card, Back on Captain's Call's view) |
 
 On the bar a tile with an icon shows only the icon, its badge (blocked agents, Captain's Calls waiting, runs needing you) and its tone; the home page's list shows the icon with the label and text. A tile whose source cannot be read (Herdr unavailable, firstmate unreadable or stale, no-mistakes unavailable) shows its words instead, so the bar says what is wrong. The Captain's Call widget has its cap while the grid has two rows; with more, its cell is too short for icon, label and text, and it keeps its label, text and badge.
 
-Tap an agent's widget to open [its card](#an-agents-card). Tap the `agents` tile to focus the first blocked agent's pane in Herdr. Tap Captain's Call (the widget or the `calls` tile) to open firstmate's decisions board on the main screen and read firstmate again at once.
+Tap an agent's widget to open [its card](#an-agents-card). Tap the `agents` tile to focus the first blocked agent's pane in Herdr. Tap the Captain's Call widget to see [the calls waiting](#captains-call-and-the-decisions-board) in place of the grid; the `calls` page item on the bar opens the same view as a page of its own, and a `calls` tile opens firstmate's decisions board on the main screen straight away. Each reads firstmate again at once.
 
 The panel answers no Captain's Call: it takes you to the board, where you answer them.
 
@@ -70,12 +70,11 @@ The panel answers no Captain's Call: it takes you to the board, where you answer
    tile = "agents"
 
    [[button]]
-   icon = "dialog-question-symbolic"
    label = "Calls"
-   tile = "calls"
+   page = "calls"
    ```
 
-   Without spots the app still gives the apps page its **Agents** page; it logs that the tiles have no spot.
+   The second item is Captain's Call's page, not a tile: a tap on it turns to the apps page on [Captain's Call](#captains-call-and-the-decisions-board), and the bar draws it with the page's cap, its count as a badge and its tone, as it would the `calls` tile. (A tile cannot turn the apps page: the touch bar's protocol has no message for that.) If your bar has `tile = "calls"` from an earlier version, change that line to `page = "calls"`; a `calls` tile you keep opens the decisions board straight away. Without spots the app still gives the apps page its **Agents** and **Captain's Call** pages; it logs that the `agents` tile has no spot (not the `calls` tile, which the page item replaces).
 
 To turn it off: `systemctl --user disable --now screenpad-agents`. Removing the config also keeps the unit from starting (`ConditionPathExists`).
 
@@ -102,34 +101,66 @@ A widget's label is the agent's firstmate task (or its directory), and its text 
 
 ## Captain's Call and the decisions board
 
-firstmate's Captain's Calls are free text, with no list of answers a button could give, so the panel does not answer them: tapping Captain's Call, the widget or the `calls` tile, takes you to where you do, **firstmate's decisions board**, the Lavish board `/bearings lavish` builds. The tap acts when you lift on it, with the touch bar's usual rules (no touch in the 0.3 s after the widget appears or changes, sliding away cancels).
+firstmate's Captain's Calls are free text, with no list of answers a button could give, so the panel does not answer them: it shows which calls wait and takes you to where you answer them, **firstmate's decisions board**, the Lavish board `/bearings lavish` builds.
 
-1. It asks firstmate which file the board is: `FM_HOME=<home> <code>/bin/fm-bearings-board.sh path`.
+### Captain's Call's page
+
+![Captain's Call's page: 2 waiting over three cells and Open board in green in the fourth, then the two calls waiting, each over two cells and both rows: fix-login-redirect, a decision, and web-dark-mode, a contribution waiting on a merge](images/agents-calls.png)
+
+*Captain's Call's page with two calls waiting, under a bar 208 px high. Rendered like the page above.*
+
+The app gives the apps page a page of its own, **Captain's Call** (`calls`): the page item `page = "calls"` on the bar opens it ([above](#turning-it-on)), and the home page's list shows it with its cap, the count and its tone. A tap on the Agents page's Captain's Call widget shows the same view in place of the grid, with **Back**. The app lays it out itself, a grid of 4 cells by 3, in large boxes:
+
+- the **count** across the top (`2 waiting`, `none waiting`, or `firstmate unreadable` and why), over three cells, or two beside Back;
+- the **board's button** in the last cell of the top row, saying what a tap does now (below);
+- the **calls waiting** under them, each over two cells (one or two calls over both rows), as firstmate's reader lists them: a decision by its task and summary (`decisions_open`), a contribution by its task, its kind and the reason it needs you (`contributions.captain`). Four fit; with more, the last box says how many more are on the board (`+3 more`, or `+3+ more` when the reader left some out itself).
+
+Each text is fitted to its box (`screenpad_agents/callpage.py`, from the extension's own sizes under a bar 208 px high: a one-cell box holds about 16 characters of label and 72 of text, a two-cell box 36 and 150), so the box cuts nothing; a longer one is cut at a word with an ellipsis. The whole of a call is on the board, and the journal keeps a whole error. A lower bar gives taller boxes.
+
+### The board's button
+
+| It says | When | A tap |
+|---|---|---|
+| **Open board** (or Request one when none is open) | the app has not looked yet | looks for the board, and opens it |
+| **Open board** (the board is ready) | the board is open in Lavish | opens it |
+| **Request board** | no board is open | asks firstmate to build it |
+| **Opening board…** (or `firstmate: <its reply>`) | the app waits for the board it asked for | looks for it again, and opens it if it is open |
+| **Open board** (shown on the main screen) | it opened the board | opens it again |
+| **Retry** (no board in 3 minutes, or `firstmate: <its reply>`) | no board came | asks firstmate again |
+| **Retry** (request failed: why) | the note to firstmate failed | asks firstmate again |
+| **Open board** (not opened: why), in red | finding or opening the board failed | tries again |
+
+The button's id names what it shows, so a tap on a button the page no longer shows does nothing; a tap acts when you lift on it, with the touch bar's usual rules (no touch in the 0.3 s after the button appears or changes, sliding away cancels). Opening the view from the Agents page looks for the board at once, so its button says Open board or Request board.
+
+### Opening the board
+
+1. The app asks firstmate which file the board is: `FM_HOME=<home> <code>/bin/fm-bearings-board.sh path`.
 2. It asks Lavish whether that board is open: `lavish-axi`'s session listing (the program, with no argument), the row for that file (both paths compared resolved, so a symlinked home matches) with status `open` and its session URL.
 3. If it is, it opens that URL with the desktop's URL handler (`gio open <url>`), the way Lavish itself opens firstmate's boards: your browser shows the board's session in its window. The app moves no window: the board shows where your browser's window is, which is the main screen unless you moved that window to the ScreenPad (where the apps page would cover it). Only a URL on this machine (`http://127.0.0.1`, `localhost` or `[::1]`) is opened.
 
-   The handler runs in a transient systemd scope of its own, `systemd-run --user --scope --collect --quiet -- gio open <url>`, never in the app's unit: a browser it starts (when none is running yet) is then a `run-*.scope` of your session, not a process of `screenpad-agents.service`, and does not count against the unit's `MemoryMax=64M`. Started inside the unit, it did, and the kernel killed the browser and the app together. When there is no `systemd-run`, or it cannot make the scope, nothing is opened and the card says so (**Board not opened**: `systemd-run not found`).
-4. If no board is open, it opens nothing and builds nothing (firstmate composes the board): a card in the bar says **No board open**, with one answer, **Request**, which asks firstmate to build it, with one note in firstmate's inbox:
+   The handler runs in a transient systemd scope of its own, `systemd-run --user --scope --collect --quiet -- gio open <url>`, never in the app's unit: a browser it starts (when none is running yet) is then a `run-*.scope` of your session, not a process of `screenpad-agents.service`, and does not count against the unit's `MemoryMax=64M`. Started inside the unit, it did, and the kernel killed the browser and the app together. When there is no `systemd-run`, or it cannot make the scope, nothing is opened and the button says so (`not opened: systemd-run not found`).
+4. If no board is open, it opens nothing and builds nothing (firstmate composes the board): the button says **Request board**.
 
-   ```sh
-   FM_HOME=<home> <code>/bin/fm-inbox.sh note --json --request-id <id> -- "Please open the decisions board: /bearings lavish. Asked from Captain's Call on the ScreenPad, where no decisions board is open."
-   ```
+A tap on a `calls` tile does all of this straight away, and the button on the page says what came of it. A second tap while the board is being looked for adds nothing.
 
-   which wakes firstmate once. The id (`screenpad-board-<time>-<random>`) is the app's own, one per request. A command that fails shows **Board not opened** (finding or opening the board) or **Request failed** (the note, with **Retry**) and why on the same card. The card's own **Dismiss** (×) closes it; a card with no answer of its own (opening, or a board not opened) has **OK**, which only closes it too.
-5. **Request** shows at once that the board is coming: the card says **Opening board…** (building it takes firstmate about a minute), and so does Captain's Call (`2 waiting · opening board`) for as long as the app waits. Meanwhile, every 10 seconds, it checks whether the board is open (steps 1 and 2) and what firstmate did with its note, through `fm-inbox.sh`'s read-only view of its notes, `FM_HOME=<home> <code>/bin/fm-inbox.sh receipts` (it writes nothing and wakes no one): whether firstmate has handled it, and the reply it recorded against it (`fm-inbox.sh reply`), if any. The wait ends
-   - when the board is open: the card says **Board open**, and its **Open** opens it as a tap does (Lavish may have opened it in your browser already);
-   - after 3 minutes with no board, or 30 seconds after firstmate replied with none open: the card says **No board yet**, with firstmate's reply when it gave one (`firstmate: …`, shown on the opening card as soon as it comes), and **Retry** asks again;
-   - when a tap on Captain's Call finds the board open and opens it.
+### Asking firstmate for the board
 
-   The Captain's Call count is read again right after the request and when the board is open, so the count and the board agree as soon as they can. The checks run only while the app waits; otherwise it reads firstmate once a minute as always. Nothing of the wait is kept on disk: an app that restarts has none, and a tap then offers **Request** again.
+**Request board** asks firstmate to build it, with one note in firstmate's inbox:
 
-![The Captain's Call card in the bar: No board open, its text over the first two spots, Dismiss, then Request in green](images/agents-call.png)
+```sh
+FM_HOME=<home> <code>/bin/fm-inbox.sh note --json --request-id <id> -- "Please open the decisions board: /bearings lavish. Asked from Captain's Call on the ScreenPad, where no decisions board is open."
+```
 
-*The card a tap on Captain's Call shows when no board is open, in a bar 208 px high. Rendered like the page above.*
+which wakes firstmate once. The id (`screenpad-board-<time>-<random>`) is the app's own, one per request. At once the button says **Opening board…** (building it takes firstmate about a minute), and so does the Captain's Call widget (`2 waiting · opening board`), for as long as the app waits. Meanwhile, every 10 seconds, the app checks whether the board is open (steps 1 and 2) and what firstmate did with its note, through `fm-inbox.sh`'s read-only view of its notes, `FM_HOME=<home> <code>/bin/fm-inbox.sh receipts` (it writes nothing and wakes no one): whether firstmate has handled it, and the reply it recorded against it (`fm-inbox.sh reply`), if any, which the button then shows. The wait ends
 
-The touch bar lays the card out itself ([How a question shows](https://github.com/mmarsot/screenpad-linux/blob/main/docs/app-api.md#how-a-question-shows-and-is-answered)): its title and text over the bar's first two spots, Dismiss in the third, then each answer in a spot of its own, and neither the title nor an answer wraps. So the app keeps each card's words to what those boxes hold (`screenpad_agents/callcard.py`, measured with the shell's font in a bar 208 px high): a title of at most 16 characters, answers of at most 8, and a text of at most 120, about six lines; a longer error is cut at a word with an ellipsis, and the log keeps it whole. A card with an answer of its own has no OK beside Dismiss, so it has one tall answer box rather than two. The boxes stay as tall and narrow as the touch bar draws them; only a change in screenpad-linux can make them wider.
+- when the board is open: the button says **Open board** and opens it (Lavish may have opened it in your browser already);
+- after 3 minutes with no board, or 30 seconds after firstmate replied with none open: the button says **Retry**, with firstmate's reply when it gave one;
+- when a tap finds the board open and opens it;
+- when the note fails: the button says **Retry** and why.
 
-A second tap while the board is opening does nothing more. While the app waits for a requested board, a tap on Captain's Call that finds none says **Opening board…** again, and queues no second note. A request keeps its id for 5 minutes (unless the board was seen open), so **Retry** meanwhile makes `fm-inbox.sh` replay a note it may have saved before failing, or one firstmate has not handled yet, rather than queue a second; after that, firstmate may have handled the note already (a replay would wake nothing), so a retry is a new request. When `fm-inbox.sh` answers (in its `fm-inbox-note.v1` JSON) that firstmate has already handled the replayed note, acknowledged or moved to `handled/`, the app asks once more at once under a new id. The tap sends nothing to an agent, and the only thing it writes into firstmate is that note, through firstmate's own `fm-inbox.sh`; the board answers through firstmate's own intake.
+The Captain's Call count is read again right after the request and when the board is open, so the count, the calls listed and the board agree as soon as they can. The checks run only while the app waits; otherwise it reads firstmate once a minute as always. Nothing of the wait is kept on disk: an app that restarts has none, and its button offers to open the board again.
+
+While the app waits, tapping queues no second note. A request keeps its id for 5 minutes (unless the board was seen open), so **Retry** meanwhile makes `fm-inbox.sh` replay a note it may have saved before failing, or one firstmate has not handled yet, rather than queue a second; after that, firstmate may have handled the note already (a replay would wake nothing), so a retry is a new request. When `fm-inbox.sh` answers (in its `fm-inbox-note.v1` JSON) that firstmate has already handled the replayed note, acknowledged or moved to `handled/`, the app asks once more at once under a new id. Nothing here sends anything to an agent, and the only thing it writes into firstmate is that note, through firstmate's own `fm-inbox.sh`; the board answers through firstmate's own intake.
 
 ## An agent's card
 
@@ -178,9 +209,9 @@ A dialog that matches none of this, or one that must never be answered with a ke
   FM_HOME=<home> <code>/bin/fm-bearings-snapshot.sh --json --fields endpoints
   ```
 
-  It takes about 3 s, and runs at most once a minute plus when you tap Captain's Call. That tap also runs `FM_HOME=<home> <code>/bin/fm-bearings-board.sh path` and `lavish-axi`, and `gio open` with the board's URL in a scope of its own (`systemd-run --user --scope`, outside the app's unit), and **Request** on its card runs `FM_HOME=<home> <code>/bin/fm-inbox.sh note --json --request-id <id> -- <text>`, then, every 10 seconds for at most 3 minutes, `fm-bearings-board.sh path`, `lavish-axi` and `FM_HOME=<home> <code>/bin/fm-inbox.sh receipts` (read-only), [above](#captains-call-and-the-decisions-board), in the thread of firstmate's control. Interrupting a task's agent runs `FM_HOME=<home> <code>/bin/fm-control.sh <task> interrupt` in a thread of its own; it and that note are the only firstmate commands the app runs that act on anything (`fm-bearings-board.sh` runs only as `path`, `fm-inbox.sh` otherwise only as `receipts`; the app never builds or arms a board, and never replies to or acknowledges a note). The count is the number of open decisions plus the captain's contributions (`decisions_open` and `contributions.captain` in its `fm-bearings.v1` output), shown with a `+` when the reader left some out. Each task's endpoint, `<session>:<pane id>` for Herdr, joins the task to the agent Herdr reports in that pane. The app passes firstmate's commands only `FM_HOME`, none of the other `FM_*` variables of its own environment, and `lavish-axi`, `systemd-run` and `gio` no `FM_*` variable at all.
+  It takes about 3 s, and runs at most once a minute plus when you open Captain's Call's view, tap the `calls` tile or the board's button, and after a request. Looking for the board runs `FM_HOME=<home> <code>/bin/fm-bearings-board.sh path` and `lavish-axi`, opening it also `gio open` with the board's URL in a scope of its own (`systemd-run --user --scope`, outside the app's unit), and **Request board** runs `FM_HOME=<home> <code>/bin/fm-inbox.sh note --json --request-id <id> -- <text>`, then, every 10 seconds for at most 3 minutes, `fm-bearings-board.sh path`, `lavish-axi` and `FM_HOME=<home> <code>/bin/fm-inbox.sh receipts` (read-only), [above](#captains-call-and-the-decisions-board), in the thread of firstmate's control. Interrupting a task's agent runs `FM_HOME=<home> <code>/bin/fm-control.sh <task> interrupt` in a thread of its own; it and that note are the only firstmate commands the app runs that act on anything (`fm-bearings-board.sh` runs only as `path`, `fm-inbox.sh` otherwise only as `receipts`; the app never builds or arms a board, and never replies to or acknowledges a note). The count is the number of open decisions plus the captain's contributions (`decisions_open` and `contributions.captain` in its `fm-bearings.v1` output), shown with a `+` when the reader left some out; Captain's Call's page names each one the reader lists (a decision's `id` and `summary`, a contribution's `task`, `kind` and `reason`). Each task's endpoint, `<session>:<pane id>` for Herdr, joins the task to the agent Herdr reports in that pane. The app passes firstmate's commands only `FM_HOME`, none of the other `FM_*` variables of its own environment, and `lavish-axi`, `systemd-run` and `gio` no `FM_*` variable at all.
 - **no-mistakes**, with `[runs]`: only its read-only `axi`, `axi status` and `axi rounds` commands, [on the Runs page](runs.md#how-it-reads); with `[runs] firstmate`, firstmate's reader is asked for `--fields endpoints,paths`, for its tasks' worktrees.
-- **The touch bar:** the socket in `$XDG_RUNTIME_DIR/screenpad/touchbar.sock`, as app `agents` with tiles `agents` and `calls` (only `agents` without firstmate), and `runs` with `[runs]`, and page `agents` (and `runs`). It talks to it through the [client library](https://github.com/mmarsot/screenpad-linux/blob/main/docs/app-api.md#the-python-client-library) `screenpad_app`, speaking app protocol 2: it sends a page or tile only when it changed, and connects again every 5 s while the daemon is not running or refuses its protocol version (a touch bar too old for it, logged once with what to update).
+- **The touch bar:** the socket in `$XDG_RUNTIME_DIR/screenpad/touchbar.sock`, as app `agents` with tiles `agents` and `calls` (only `agents` without firstmate), and `runs` with `[runs]`, and pages `agents` and `calls` (only `agents` without firstmate), and `runs` with `[runs]`. It talks to it through the [client library](https://github.com/mmarsot/screenpad-linux/blob/main/docs/app-api.md#the-python-client-library) `screenpad_app`, speaking app protocol 2: it sends a page or tile only when it changed, and connects again every 5 s while the daemon is not running or refuses its protocol version (a touch bar too old for it, logged once with what to update).
 
 ## Troubleshooting
 
@@ -190,11 +221,13 @@ A dialog that matches none of this, or one that must never be answered with a ke
 | The page says **Herdr unavailable** | `screenpad-agents show` prints Herdr's error. Is the Herdr server running, and is `[herdr] session` the session your agents are in (`herdr session list`)? |
 | **No agents** | Herdr reports none in that session; `herdr agent list --session <session>` |
 | An agent shows without its task | firstmate has no Herdr endpoint for that pane in that session; `screenpad-agents show` lists the join |
-| Tapping Captain's Call says **No board open** | firstmate has no Lavish board open: choose **Request** on the card (or ask firstmate for `/bearings lavish` yourself); Lavish opens the board once firstmate has built it, and a tap opens it then |
-| It says **Opening board…** for a while | firstmate has the note but has not built the board yet: it builds it when it next drains its inbox (`FM_HOME=<home> <code>/bin/fm-inbox.sh status` shows the note). Tapping meanwhile queues nothing more; after 3 minutes the card says **No board yet** |
-| It says **No board yet** | no board was open 3 minutes after the request (or 30 seconds after firstmate replied; the card shows its reply). **Retry** asks again: under the same request id for 5 minutes, so a note firstmate has not handled yet is not queued twice; once firstmate handled it, one new note. A check that failed meanwhile is in the journal (`checking for the decisions board: …`) |
-| It says **Request failed** | `fm-inbox.sh note` failed, and the card says why: a firstmate checkout without `bin/fm-inbox.sh`, or the note's own error (it may have saved the note but not woken firstmate). **Retry** tries again under the same request id for 5 minutes, so `fm-inbox.sh` replays a saved note rather than queueing a second (or, if firstmate already handled it, the app queues one new note); later it asks anew |
-| It says **Board not opened** | the card says which command failed (a long message is cut on the card; the journal has it whole): `lavish-axi` not found by the unit (set `[firstmate] lavish`, above), `systemd-run` not found by the unit (it is part of systemd: give the unit a `PATH` that has it; the board is never opened without it, as a browser started in the unit got it and the app OOM-killed), the desktop's URL handler (`systemd-run` or `gio open`, whose own message is in the journal, `journalctl --user -u screenpad-agents`, such as `Failed to start transient scope unit`; the card gives its exit code), or a firstmate checkout without `bin/fm-bearings-board.sh` |
+| The bar's Captain's Call opens the board, not the page | that spot is the `calls` tile (`tile = "calls"`, from an earlier version): change that line to `page = "calls"` in `touchbar.toml` ([above](#turning-it-on)). A tile cannot turn the apps page |
+| The button says **Request board** | firstmate has no Lavish board open: tap it (or ask firstmate for `/bearings lavish` yourself); Lavish opens the board once firstmate has built it, and the button then opens it too |
+| It says **Opening board…** for a while | firstmate has the note but has not built the board yet: it builds it when it next drains its inbox (`FM_HOME=<home> <code>/bin/fm-inbox.sh status` shows the note). Tapping meanwhile queues nothing more; after 3 minutes the button says **Retry** |
+| It says **Retry**: no board in 3 minutes, or firstmate's reply | no board was open 3 minutes after the request (or 30 seconds after firstmate replied). **Retry** asks again: under the same request id for 5 minutes, so a note firstmate has not handled yet is not queued twice; once firstmate handled it, one new note. A check that failed meanwhile is in the journal (`checking for the decisions board: …`) |
+| It says **Retry**: request failed | `fm-inbox.sh note` failed, and the button says why: a firstmate checkout without `bin/fm-inbox.sh`, or the note's own error (it may have saved the note but not woken firstmate). **Retry** tries again under the same request id for 5 minutes, so `fm-inbox.sh` replays a saved note rather than queueing a second (or, if firstmate already handled it, the app queues one new note); later it asks anew |
+| It says **not opened** | the button says which command failed (a long message is cut to the button; the journal has it whole): `lavish-axi` not found by the unit (set `[firstmate] lavish`, above), `systemd-run` not found by the unit (it is part of systemd: give the unit a `PATH` that has it; the board is never opened without it, as a browser started in the unit got it and the app OOM-killed), the desktop's URL handler (`systemd-run` or `gio open`, whose own message is in the journal, `journalctl --user -u screenpad-agents`, such as `Failed to start transient scope unit`; the button gives its exit code), or a firstmate checkout without `bin/fm-bearings-board.sh` |
+| Captain's Call counts calls the board does not show | the count and the calls listed are firstmate's reader's, which may still hold a row the board has dropped (a contribution in firstmate's cache, for one): the page names that row, so you can tell firstmate which one is stale |
 | Captain's Call says **firstmate unreadable** or **(stale)** | the reader failed; the app logs why once (`journalctl --user -u screenpad-agents`). Meanwhile the `calls` tile shows these words in place of its cap |
 | A blocked agent's card has no answer buttons | Its harness has no keymap, or its screen is not a permission dialog the keymap knows (the card says "answer it in its pane" for a harness with no keymap or an unreadable screen, "no dialog this card knows" for a screen its keymap does not recognise); answer it there, through **Focus** |
 | An answer says **nothing sent** | The dialog or the agent's state changed between the card being drawn and your tap; read the new card and tap again |

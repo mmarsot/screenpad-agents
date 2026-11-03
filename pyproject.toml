@@ -72,7 +72,7 @@ module = [
     "test_agents_app",
     "test_agents_board",
     "test_agents_boardwait",
-    "test_agents_callcard",
+    "test_agents_callpage",
     "test_agents_card",
     "test_agents_config",
     "test_agents_fleet",

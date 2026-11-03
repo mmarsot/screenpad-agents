@@ -5,7 +5,9 @@ Read through firstmate's own read-only reader, never its files:
   FM_HOME=<home> <code>/bin/fm-bearings-snapshot.sh --json --fields endpoints
 
 prints the fm-bearings.v1 model. The Captain's Calls waiting are
-len(decisions_open) + len(contributions.captain); "endpoints" gives each
+len(decisions_open) + len(contributions.captain), each named as the model
+gives it: a decision by its id and summary, a contribution by its task, its
+kind and the reason it needs the captain; "endpoints" gives each
 task's recorded endpoint, for Herdr "<session>:<pane id>", which joins a task
 to the agent Herdr reports in that pane. "in_flight" gives the task's name
 and what it is doing. With the Runs page discovering firstmate's projects,
@@ -117,23 +119,45 @@ class Task:
         return "Task(%r)" % self.id
 
 
-class Bearings:
-    """What one read gave: the Captain's Calls waiting (more when the reader
-    left some out), the tasks by endpoint target, and the live tasks'
-    worktrees by task id (when the reader was asked for paths)."""
+class Call:
+    """One Captain's Call waiting: a "decision" or a "contribution", its
+    title (the task) and what it is about (or None)."""
 
-    __slots__ = ("calls", "more", "tasks", "worktrees")
+    __slots__ = ("kind", "text", "title")
 
-    def __init__(self, calls, more, tasks, worktrees=None):
-        self.calls, self.more, self.tasks, self.worktrees = calls, more, tasks, worktrees or {}
+    def __init__(self, kind, title, text=None):
+        self.kind, self.title, self.text = kind, title, text
 
     def __eq__(self, other):
-        return isinstance(other, Bearings) and (self.calls, self.more, self.tasks, self.worktrees) == (
-            other.calls,
-            other.more,
-            other.tasks,
-            other.worktrees,
-        )
+        return isinstance(other, Call) and (self.kind, self.title, self.text) == (other.kind, other.title, other.text)
+
+    def __hash__(self):
+        return hash((self.kind, self.title, self.text))
+
+    def __repr__(self):
+        return "Call(%r, %r, %r)" % (self.kind, self.title, self.text)
+
+
+class Bearings:
+    """What one read gave: the Captain's Calls waiting (more when the reader
+    left some out) and each of them the reader listed, the tasks by endpoint
+    target, and the live tasks' worktrees by task id (when the reader was
+    asked for paths)."""
+
+    __slots__ = ("calls", "more", "tasks", "waiting", "worktrees")
+
+    def __init__(self, calls, more, tasks, worktrees=None, waiting=()):
+        self.calls, self.more, self.tasks, self.worktrees = calls, more, tasks, worktrees or {}
+        self.waiting = list(waiting)
+
+    def __eq__(self, other):
+        return isinstance(other, Bearings) and (
+            self.calls,
+            self.more,
+            self.tasks,
+            self.worktrees,
+            self.waiting,
+        ) == (other.calls, other.more, other.tasks, other.worktrees, other.waiting)
 
     def __hash__(self):
         return hash((self.calls, self.more))
@@ -304,7 +328,27 @@ def parse(model):
         if isinstance(p, dict) and isinstance(p.get("id"), str) and isinstance(p.get("worktree"), str):
             if os.path.isabs(p["worktree"]):
                 worktrees[p["id"]] = p["worktree"]
-    return Bearings(len(decisions) + len(captain), more, tasks, worktrees)
+    waiting = [c for c in map(_decision, decisions) if c] + [c for c in map(_contribution, captain) if c]
+    return Bearings(len(decisions) + len(captain), more, tasks, worktrees, waiting)
+
+
+def _decision(d):
+    """A decision_open row as a Call: its id (else its key) and summary."""
+    if not isinstance(d, dict):
+        return None
+    title = _text(d.get("id")) or _text(d.get("key"))
+    return Call("decision", title, _text(d.get("summary"))) if title else None
+
+
+def _contribution(c):
+    """A captain contribution row as a Call: its task, and its kind with the
+    reason it needs the captain (else its URL)."""
+    if not isinstance(c, dict) or not _text(c.get("task")):
+        return None
+    about = _text(c.get("reason")) or _text(c.get("url"))
+    kind = _text(c.get("kind"))
+    text = "%s: %s" % (kind, about) if kind and about else about or kind
+    return Call("contribution", _text(c.get("task")), text)
 
 
 def listed_url(listing, path):
