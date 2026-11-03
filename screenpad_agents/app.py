@@ -166,9 +166,9 @@ class App:
                 return
             if job[0] == "board":
                 try:
-                    self._post("board", self.firstmate.open_board(), None)
+                    self._post("board", *self.firstmate.open_board(), None)
                 except Exception as e:
-                    self._post("board", None, _why(e, FirstmateError))
+                    self._post("board", None, None, _why(e, FirstmateError))
                 continue
             if job[0] == "request":
                 request_id = job[1]
@@ -266,11 +266,13 @@ class App:
             return False
         return True
 
-    def _board(self, url, error):
+    def _board(self, url, note, error):
         self._opening = False
         if url is not None:
             self._requested = self._request_id = None  # the board is there: a later request asks again
             self.log("opened the decisions board: %s" % url)
+            if note is not None:
+                self.log(note)
         elif error is not None:
             self.log("the decisions board did not open: %s" % error)
             self._ask("Decisions board not opened", error)

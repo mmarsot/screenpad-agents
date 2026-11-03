@@ -13,6 +13,8 @@ ExecStart=%h/.local/bin/screenpad-agents run
 Restart=on-failure
 RestartSec=5
 RestartPreventExitStatus=2
+# The app's own limit: the browser it opens the decisions board with runs in a
+# scope of its own (systemd-run --user --scope), outside this unit.
 MemoryMax=64M
 
 [Install]
