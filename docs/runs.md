@@ -1,12 +1,16 @@
 # The Runs page
 
-With a `[runs]` table in its config, the [agent app](agents.md) adds a second page to the touch bar's apps page: **Runs**, the [no-mistakes](https://github.com/kunchenguid/no-mistakes) pipeline runs of your projects and their status. It only reads them: it starts, answers, aborts, retries or syncs no run, and never touches the no-mistakes daemon.
+With a `[runs]` table in its config, the [agent app](agents.md) adds a second page to the touch bar's apps page: **Runs**, the [no-mistakes](https://github.com/kunchenguid/no-mistakes) pipeline runs of your projects and their status. It only reads them: it starts, answers, aborts, retries or syncs no run, and never touches the no-mistakes daemon. The one thing it does is open a run's pull request in your browser, when you ask.
 
 - **one row per project**: the project's widget, then its active runs, then its recent ones (the newest run of each branch not shown yet), up to four runs a row;
 - **each run joined to its agent and its firstmate task**: a run shows under the task's name when it is one, otherwise under its branch, with what it is doing (`running · review`, `waiting on you · review`, `failed · push`, `passed · PR #12`);
 - **a warning** when one agent, one repo copy or one branch has more than one active run: normally there is at most one per agent. The project's widget turns red and says so, and the runs involved carry a `2+` badge;
-- **a run's card** when you tap it: its steps, findings and how it ended, and **Focus** to its agent's pane;
+- **a run's card** when you tap it: its steps, findings and how it ended, **Focus** to its agent's pane, and **Open PR** once the run has opened a pull request;
 - an optional **`runs` tile** for the bar: a lighthouse, with how many runs need you (the home page's list adds how many are active). The Runs page has the lighthouse too, in the home page's list; see [its icons](agents.md#its-icons).
+
+![The Runs page: api with 1 active and 1 needing you, then fix-login-redirect running at ci with PR #14 in green, fm/docs-install passed with PR #12 in grey and fm/rate-limit failed with PR #11 in red; below, web with web-dark-mode waiting on you at review in amber and fm/footer passed with PR #30](images/runs-page.png)
+
+*The Runs page with two projects, under a bar 208 px high. Rendered by the touch bar's extension in a headless GNOME Shell 50.1, from the app's own page fed to the daemon's own code, with stand-in runs, agents and tasks.*
 
 ## Turning it on
 
@@ -77,6 +81,27 @@ Tapping a run opens its card in place of the grid, until **Back** or the run lea
 
 **Focus** (a spyglass) focuses the pane of the run's agent in Herdr, like Focus on an agent's card; with no agent joined it is dimmed and says so in place of its spyglass. The card answers nothing: a gate is answered where the run is driven, in the agent's pane.
 
+## Opening a run's pull request
+
+![A run's card: fix-login-redirect's steps, each completed up to ci running, under its branch, status and pull request URL; Back, Focus and the task with its pane on the right, the project api running at ci with PR #14 in green across the bottom, and Open PR #14 with its signal flag in the bottom right corner](images/runs-card.png)
+
+*The card of a run watching CI, opened from the Runs page. Rendered like the page above.*
+
+Once no-mistakes has opened the run's pull request (from its `pr` step on: while it watches CI, and after the run passed or failed), the card has **Open PR #12** (a signal flag) in its bottom right corner. A tap on Open PR opens the pull request in your browser on the main screen, the same way [Captain's Call opens the decisions board](agents.md#opening-the-board): the desktop's URL handler in a transient scope of its own, outside the app's unit,
+
+```sh
+systemd-run --user --scope --collect --quiet -- gio open https://github.com/<owner>/<repo>/pull/<number>
+```
+
+| The button says | When | A tap |
+|---|---|---|
+| **Open PR #12** | the run has a pull request | opens it |
+| **Opening PR…** (no touch) | the URL handler is running | |
+| **PR #12 opened** | it opened | opens it again |
+| **Open PR #12** (not opened: why), in red | `systemd-run` is missing or could not make the scope, or the URL handler failed | tries again |
+
+The URL is no-mistakes' own: the run's `pr` in `no-mistakes axi status --run <id>` (the card's read), else in the run list of `no-mistakes axi`, already read for the page; nothing more is read for it, and no URL is ever made up from a branch or a number. Only a pull request's own https URL on GitHub, `https://github.com/<owner>/<repo>/pull/<number>` with nothing else (no user, port, query or fragment), is opened; a run whose `pr` is anything else has no Open PR. The journal says what came of each open (`opened PR <url>`, or `PR <url> not opened: <why>`).
+
 ## How it reads
 
 Only these no-mistakes commands run, each read-only, and no other (`screenpad_agents/nomistakes.py` refuses any other argument list):
@@ -87,6 +112,8 @@ Only these no-mistakes commands run, each read-only, and no other (`screenpad_ag
 | `no-mistakes axi status` | in each repo copy | the copy's current branch and that branch's run |
 | `no-mistakes axi status --run <id>` | | each active run in detail: steps, gate, outcome, error; and the open card's run |
 | `no-mistakes axi rounds --run <id> --step <step> --json` | | the findings of the open card's steps that have some |
+
+The one command the Runs page runs that acts is opening a pull request, on Open PR: `systemd-run --user --scope --collect --quiet -- gio open <url>`, with the run's `pr` the commands above gave ([Opening a run's pull request](#opening-a-runs-pull-request)); `systemd-run` and `gio` get no `FM_*` variable. It runs in the Runs page's thread, between two reads.
 
 firstmate's task worktrees come from its own reader: with `[runs] firstmate`, the reader the app already runs is asked for `--fields endpoints,paths` instead of `--fields endpoints`. Of firstmate's home the app reads nothing else but the names of the directories in `<home>/projects/`.
 
@@ -100,4 +127,6 @@ Each call takes about 30 ms. They run in a thread of their own, off the app's lo
 | A configured repo says `repo not initialized` | no-mistakes does not watch it: `no-mistakes init` there |
 | **No projects** | none of the directories configured or found is a repository no-mistakes watches |
 | A run shows without its agent or task | no repo copy the app knows has the run's branch checked out, or no Herdr agent's `cwd` is that copy; `screenpad-agents show` lists each run with its pane |
+| A run's card has no **Open PR** | no-mistakes has not opened its pull request yet (the run's `pr` in `no-mistakes axi status --run <id>` is empty), or that `pr` is no GitHub pull request URL: only `https://github.com/<owner>/<repo>/pull/<number>` is opened |
+| **Open PR** says **not opened** | the button says why (the journal has it whole): `systemd-run` not found by the unit, it could not make the scope, or `gio open` failed (its own message is in the journal, `journalctl --user -u screenpad-agents`), as for [the decisions board](agents.md#troubleshooting) |
 | A project is red | more than one run is active for one agent, copy or branch; `no-mistakes axi status` in that copy says which run is the branch's |

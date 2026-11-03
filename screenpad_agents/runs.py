@@ -22,6 +22,7 @@ from screenpad_app.common import MAX_BADGE, MAX_LABEL, MAX_ROWS, MAX_TEXT, MAX_T
 
 from . import runcard
 from .common import LIGHTHOUSE, RUNS_PAGE, RUNS_TILE, icon
+from .nomistakes import pr_url
 
 COLUMNS = 5
 MIN_ROWS = 2
@@ -121,6 +122,13 @@ class View:
         if number.isdigit():
             words.append("PR #" + number)
         return " · ".join(words)
+
+    def pr_url(self, detail=None):
+        """The URL of the run's pull request to open: what no-mistakes gives
+        (detail's, the view's own detail's, else the run list's), and only a
+        pull request's on the forge (nomistakes.pr_url); None otherwise."""
+        detail = detail or self.detail
+        return pr_url(detail.pr if detail is not None and detail.pr else self.run.pr)
 
     def tone(self):
         if self.attention:
@@ -252,6 +260,21 @@ class Runs:
         """A fresh read of the open card's run; ignored for any other run."""
         if self.card is not None and self.card.run_id == run_id:
             self.card.detail, self.card.error = (self.card.detail, error) if error else (detail, None)
+
+    def set_opened(self, run_id, url, error=None):
+        """The open of the open card's pull request ended; ignored for any
+        other run."""
+        if self.card is not None and self.card.run_id == run_id:
+            self.card.pr_opened(url, error)
+
+    def pr_of(self, fleet, run_id):
+        """The pull request URL of run_id to open (View.pr_url), with the
+        open card's own detail when it is that run's."""
+        view = self._view(fleet, run_id)
+        if view is None:
+            return None
+        card = self.card
+        return view.pr_url(card.detail if card is not None and card.run_id == run_id else None)
 
     def card_pane(self, fleet):
         """The pane of the agent of the open card's run, if any."""

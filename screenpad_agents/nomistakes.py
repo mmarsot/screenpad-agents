@@ -20,6 +20,10 @@ through these read-only commands:
 Nothing here starts, answers, aborts, retries or syncs a run, or touches the
 daemon: NoMistakes has no method that would, and it runs no argument list
 but these four shapes (read_only, test_only_read_only_commands_run).
+
+A run's "pr" is the pull request's URL as no-mistakes printed it; pr_url
+gives it only when it is a pull request's own https URL on the forge
+(FORGE), the only URL the Runs page opens.
 """
 
 import json
@@ -36,6 +40,15 @@ STEP = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 FINISHED = ("completed", "failed", "cancelled", "checks_passed", "passed")
 # What no-mistakes says in a directory it cannot watch.
 NOT_A_REPO = ("not in a git repository", "not initialized")
+# The forge whose pull requests the Runs page opens, and a pull request's
+# URL there: https, no user, port, query or fragment, only its own path
+# (owner, repository other than . or .., number).
+FORGE = "github.com"
+PR_URL = re.compile(
+    "https://"
+    + re.escape(FORGE)
+    + r"/[A-Za-z0-9][A-Za-z0-9-]{0,38}/(?!\.\.?/)[A-Za-z0-9._-]{1,100}/pull/[1-9][0-9]{0,9}"
+)
 # A TOON line: key, an optional [N] and {fields}, then its value if any.
 HEADER = re.compile(r"(?P<key>[A-Za-z_][\w.-]*)(?:\[(?P<n>\d+)\](?:\{(?P<fields>[^}]*)\})?)?:(?: (?P<rest>.*))?$")
 
@@ -240,6 +253,12 @@ def read_only(words):
     if len(words) == 4 and words[:3] == ["axi", "status", "--run"]:
         return True
     return len(words) == 7 and words[:3] == ["axi", "rounds", "--run"] and words[4] == "--step" and words[6] == "--json"
+
+
+def pr_url(text):
+    """text when it is a pull request's URL on FORGE (PR_URL), else None:
+    never a URL of another host, scheme or shape."""
+    return text if isinstance(text, str) and PR_URL.fullmatch(text) else None
 
 
 def toon(text):

@@ -32,13 +32,12 @@ are answered; the panel answers none. Its file is what firstmate says,
 and it is open when Lavish's own session listing (lavish-axi, run with no
 argument) shows that file "open", with its session's URL. That URL, and only
 a loopback http one, is handed to the desktop's URL handler in a transient
-scope of its own,
+scope of its own (desktop.py),
 
   systemd-run --user --scope --collect --quiet -- gio open <url>
 
-so a browser it starts is never in the app's unit, whose MemoryMax (64M) it
-would count against: a browser started there got the app and itself
-OOM-killed. Without systemd-run nothing is opened. With no session open
+so a browser it starts is never in the app's unit. Without systemd-run
+nothing is opened. With no session open
 nothing is built or armed from here: firstmate composes the board. The panel
 can ask it to, with one note in firstmate's inbox,
 
@@ -59,7 +58,6 @@ and checks for the board open as a tap does (boardrequest.py).
 import json
 import os
 import re
-import shutil
 import subprocess
 
 from .common import (
@@ -69,8 +67,8 @@ from .common import (
     FIRSTMATE_TIMEOUT,
     INBOX_TIMEOUT,
     LAVISH_TIMEOUT,
-    OPEN_TIMEOUT,
 )
+from .desktop import OPENER, SCOPE, DesktopError, open_url
 
 # A task id as fm-control.sh takes it: a bare id, never an option or an
 # endpoint.
@@ -86,11 +84,6 @@ BOARD_REQUEST = (
     "Please open the decisions board: /bearings lavish. "
     "Asked from Captain's Call on the ScreenPad, where no decisions board is open."
 )
-
-# The desktop's URL handler, and the transient scope (a cgroup of its own,
-# outside the app's unit) it runs in.
-OPENER = ("gio", "open")
-SCOPE = ("systemd-run", "--user", "--scope", "--collect", "--quiet", "--")
 
 # What fm-inbox.sh note --json and receipts print.
 NOTE_SCHEMA = "fm-inbox-note.v1"
@@ -221,11 +214,10 @@ class Firstmate:
         url = self.board_url()
         if url is None:
             return None
-        scope = shutil.which(self.scope[0])
-        if not scope:
-            raise FirstmateError("%s not found" % self.scope[0])
-        argv = [scope] + self.scope[1:] + self.opener + [url]
-        self._call(argv, "opening the board", OPEN_TIMEOUT, home=False, detach=True)
+        try:
+            open_url(url, "opening the board", self._run, self.scope, self.opener)
+        except DesktopError as e:
+            raise FirstmateError(str(e))
         return url
 
     def request_board(self, request_id):
@@ -276,21 +268,15 @@ class Firstmate:
             raise FirstmateError("firstmate has no bin/fm-inbox.sh")
         return self.inbox
 
-    def _call(self, argv, what, timeout, home=True, detach=False):
+    def _call(self, argv, what, timeout, home=True):
         """Run one of firstmate's commands with FM_HOME (or, home False,
         another program without it), and none of the other FM_* variables of
-        this environment. Detached, the program gets no pipe, so a child it
-        leaves running holds none: its output goes nowhere, its errors to the
-        app's own (the journal), in a session of its own."""
+        this environment."""
         env = {k: v for k, v in os.environ.items() if not k.startswith("FM_")}
         if home:
             env["FM_HOME"] = self.home
-        if detach:
-            streams = {"stdout": subprocess.DEVNULL, "start_new_session": True}
-        else:
-            streams = {"capture_output": True}
         try:
-            done = self._run(argv, text=True, timeout=timeout, env=env, stdin=subprocess.DEVNULL, **streams)
+            done = self._run(argv, text=True, timeout=timeout, env=env, stdin=subprocess.DEVNULL, capture_output=True)
         except OSError as e:
             raise FirstmateError("%s: %s" % (argv[0], e.strerror))
         except subprocess.TimeoutExpired:

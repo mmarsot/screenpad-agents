@@ -17,24 +17,36 @@ It reads every [runs] poll seconds while a run is active, every [runs] idle
 seconds while none is, at once when a card opens, and not at all while the
 touch bar is not connected (nothing would show it). The loop tells it the
 copies to look in when Herdr's agents or firstmate's tasks change.
+
+It also opens a run's pull request, on Open PR on the run's card: the URL
+no-mistakes gave (runs.View.pr_url), with the desktop's URL handler in a
+scope of its own (desktop.py), the one command here that acts; it reads
+nothing more for it.
 """
 
 import os
 import queue
 import time
 
+from . import desktop
 from . import runs as model
 from .common import why
 from .nomistakes import NoMistakesError, NotARepo
-from .runcard import BACK, FOCUS
+from .runcard import BACK, FOCUS, PR
 
 # A card's findings: the steps' rounds read at most.
 MAX_STEPS_READ = 4
 
 
+def open_pr(url):
+    """Open a pull request's URL in the browser on the main screen."""
+    desktop.open_url(url, "opening the PR")
+
+
 class RunsWatch:
-    def __init__(self, settings, client, home, post, clock=time.monotonic):
+    def __init__(self, settings, client, home, post, clock=time.monotonic, opener=open_pr):
         self.settings, self.client, self.home, self.post, self.clock = settings, client, home, post, clock
+        self.opener = opener
         self.board = model.Runs()
         self._jobs: queue.Queue = queue.Queue()
         self._places = None
@@ -62,6 +74,8 @@ class RunsWatch:
                 watching = job[1]
                 if watching is not None and showing:
                     self._read_card(watching)
+            elif job[0] == "open":
+                self._open(*job[1:])
             if not showing or self.clock() < due:
                 continue
             active = False
@@ -84,6 +98,14 @@ class RunsWatch:
             self.post("run", run_id, detail, None)
         except Exception as e:
             self.post("run", run_id, None, why(e, NoMistakesError))
+
+    def _open(self, run_id, url):
+        try:
+            self.opener(url)
+        except Exception as e:
+            self.post("opened", run_id, url, why(e, desktop.DesktopError))
+        else:
+            self.post("opened", run_id, url, None)
 
     def scan(self, worktrees=(), cwds=()):
         """One read of every project and copy: a runs.Scan;
@@ -172,12 +194,16 @@ class RunsWatch:
             self.board.set_scan(*rest)
             if had is not None and self.board.card is None:
                 self._jobs.put(("watch", None))
+        elif what == "opened":
+            self.board.set_opened(*rest)
         else:
             self.board.set_detail(*rest)
         return True
 
     def touch(self, widget, touch, fleet):
-        """A touch on the Runs page: (the page changed, a pane to focus)."""
+        """A touch on the Runs page: (the page changed, a pane to focus).
+        A tap on a run opens its card; Open PR on the card opens its pull
+        request."""
         if touch != "tap":
             return False, None
         board = self.board
@@ -186,12 +212,26 @@ class RunsWatch:
                 board.close_card()
                 self._jobs.put(("watch", None))
                 return True, None
+            if widget == PR:
+                return self._open_pr(fleet), None
             return False, board.card_pane(fleet) if widget == FOCUS else None
         run_id = board.run_of(widget)
         if run_id is not None and board.open_card(run_id) is not None:
             self._jobs.put(("watch", run_id))
             return True, None
         return False, None
+
+    def _open_pr(self, fleet):
+        """Open the open card's pull request, unless an open is on its way:
+        True when the card changed."""
+        card = self.board.card
+        if card is None:
+            return False
+        url = self.board.pr_of(fleet, card.run_id)
+        if url is None or not card.open_pr(url):
+            return False
+        self._jobs.put(("open", card.run_id, url))
+        return True
 
     def stop(self):
         self._jobs.put(None)

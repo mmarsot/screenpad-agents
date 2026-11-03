@@ -44,7 +44,7 @@ screenpad-agents puts your coding agents on the ASUS ScreenPad's touch bar, as a
 - **firstmate tasks and decisions**, when you use firstmate: an agent whose pane is a task's endpoint is named after the task, and Captain's Call counts the decisions waiting for you and names them, on a page of its own with a button that opens firstmate's decisions board in the browser on the main screen, or asks firstmate for one and says when it is open; the panel itself answers none. See [Captain's Call and the decisions board](docs/agents.md#captains-call-and-the-decisions-board).
 - **An agent's card**, when you tap it: the agent's own screen, Focus and Interrupt, and for a Claude Code permission dialog Allow once, Always (a long press) and Deny, sent only if the dialog is still the one drawn. See [answering safely](docs/agents.md#answering-safely).
 - **Items for the bar**, if you give them spots: the `agents` tile (how many agents, how many blocked) and Captain's Call's page, `page = "calls"` (the Captain's Call count; a tap opens the page). Each is drawn with the app's [nautical icons](docs/agents.md#its-icons): a ship's helm for the agents, the captain's cap for Captain's Call.
-- **A Runs page**, optionally: every [no-mistakes](https://github.com/kunchenguid/no-mistakes) run per project and its status, read only, each joined to its agent and firstmate task, a warning when one agent has more than one active run, a run's card with its steps, findings and Focus, and a `runs` tile. See [Runs page](docs/runs.md).
+- **A Runs page**, optionally: every [no-mistakes](https://github.com/kunchenguid/no-mistakes) run per project and its status, read only, each joined to its agent and firstmate task, a warning when one agent has more than one active run, a run's card with its steps, findings, Focus and Open PR (its pull request in your browser), and a `runs` tile. See [Runs page](docs/runs.md).
 - **Off until you turn it on.** It is installed off and runs only once you write its config. [The agent app](docs/agents.md) explains what it shows, its config and how it reads and acts.
 
 <table>
@@ -125,7 +125,7 @@ If screenpad-linux installed its own copy of the app, uninstalling this one brin
 | Document | Contents |
 |---|---|
 | [Agent app](docs/agents.md) | what it shows, Captain's Call and the decisions board, an agent's card and answering safely, the keymap, its config, turning it on, how it reads and acts |
-| [Runs page](docs/runs.md) | the no-mistakes runs per project: turning it on, which projects, the joins to agents and tasks, the warning, a run's card, how it reads |
+| [Runs page](docs/runs.md) | the no-mistakes runs per project: turning it on, which projects, the joins to agents and tasks, the warning, a run's card, opening its pull request, how it reads |
 | [Development](docs/development.md) | code layout, the checks and the test suite |
 | [Touch bar app API](https://github.com/mmarsot/screenpad-linux/blob/main/docs/app-api.md) | in screenpad-linux: the socket protocol this app speaks, and the client library |
 | [screenpad-linux](https://github.com/mmarsot/screenpad-linux) | the ScreenPad's display and touch bar this app runs on, in its own repository |
