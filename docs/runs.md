@@ -96,7 +96,7 @@ Each call takes about 30 ms. They run in a thread of their own, off the app's lo
 
 | Problem | Where to look |
 |---|---|
-| The Runs page says **no-mistakes unavailable** | no-mistakes could not be run in any project; `screenpad-agents show` prints why. Is `no-mistakes` on the unit's `PATH` (else set `[runs] command`)? |
+| The Runs page or the `runs` tile says **no-mistakes unavailable** | no-mistakes could not be run in any project (the tile says so in place of its lighthouse, even while the page still shows the last runs read); `screenpad-agents show` prints why. Is `no-mistakes` on the unit's `PATH` (else set `[runs] command`)? |
 | A configured repo says `repo not initialized` | no-mistakes does not watch it: `no-mistakes init` there |
 | **No projects** | none of the directories configured or found is a repository no-mistakes watches |
 | A run shows without its agent or task | no repo copy the app knows has the run's branch checked out, or no Herdr agent's `cwd` is that copy; `screenpad-agents show` lists each run with its pane |

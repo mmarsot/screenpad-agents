@@ -291,14 +291,13 @@ class Runs:
     def tile(self, views):
         active, attention, _ = self.counts(views)
         msg = {"op": "set", "tile": RUNS_TILE, "label": "Runs", "tone": self.tone(views)}
-        if self.scan is not None:
+        if self.error:
+            msg["text"] = "no-mistakes unavailable"
+        elif self.scan is not None:
             text = "%d active" % active if active else "none active"
             if attention:
                 text += " · %d need%s you" % (attention, "s" if attention == 1 else "")
             msg["text"] = clip(text, MAX_TILE_TEXT)
-        elif self.error:
-            msg["text"] = "no-mistakes unavailable"
-        if self.scan is not None:
             msg["icon"] = icon(LIGHTHOUSE)
         if attention:
             msg["badge"] = clip(str(attention), MAX_BADGE)

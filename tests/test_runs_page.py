@@ -188,6 +188,11 @@ class RunsPageTests(unittest.TestCase):
         self.assertNotIn("icon", apps.provided()["runs"])  # its words show on the bar instead
         b.set_scan(scan([]))
         self.assertEqual(self.cells(b, fleet())["runs.note"].look["label"], "No projects")
+        self.assertIn("icon", self.accepted(b, fleet()).provided()["runs"])
+        b.set_scan(None, "no-mistakes: timed out")  # failing after a good scan: the stale runs stay on the page
+        tile = self.accepted(b, fleet()).provided()["runs"]
+        self.assertEqual(tile["text"], "no-mistakes unavailable")
+        self.assertNotIn("icon", tile)
 
     def test_a_runs_card(self):
         b = self.board(
