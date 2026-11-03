@@ -3,14 +3,14 @@
 Puts your coding agents on the ASUS ScreenPad's touch bar, as an app of [screenpad-linux](https://github.com/mmarsot/screenpad-linux)'s touch bar:
 
 - **Every agent [Herdr](https://herdr.dev) reports**, one large widget each on the touch bar's apps page, colored by Herdr's own state: green while working, amber while blocked (waiting for you), grey when idle. Herdr is the authority on which agents run and in what state; the app only shows what it says.
-- **firstmate tasks and decisions**, when you use firstmate: an agent whose pane is a task's endpoint is named after the task, and a Captain's Call widget counts the decisions waiting for you. Tapping it opens firstmate's decisions board in the browser on the main screen, or, when none is open, offers to ask firstmate for one; the panel itself answers none.
+- **firstmate tasks and decisions**, when you use firstmate: an agent whose pane is a task's endpoint is named after the task, and Captain's Call counts the decisions waiting for you and names them, on a page of its own with a button that opens firstmate's decisions board in the browser on the main screen, or asks firstmate for one and says when it is open; the panel itself answers none.
 - **An agent's card**, when you tap it: the agent's own screen, Focus and Interrupt, and for a Claude Code permission dialog Allow once, Always (a long press) and Deny, sent only if the dialog is still the one drawn.
-- Two **tiles for the bar**, if you give them spots: `agents` (how many agents, how many blocked) and `calls` (the Captain's Call count).
+- **Items for the bar**, if you give them spots: the `agents` tile (how many agents, how many blocked) and Captain's Call's page, `page = "calls"` (the Captain's Call count; a tap opens the page).
 - Optionally, a **Runs page**: every [no-mistakes](https://github.com/kunchenguid/no-mistakes) run per project and its status, read only, each joined to its agent and firstmate task, a warning when one agent has more than one active run, a run's card with its steps, findings and Focus, and a `runs` tile.
 
 It is installed off and runs only once you write its config. [The agent app](docs/agents.md) explains what it shows, its config and how it reads and acts.
 
-![The Agents page: Captain's Call with the captain's cap and 2 waiting, then fix-login-redirect blocked in amber, web-dark-mode and docs-install-guide working in green, and dotfiles idle in grey; the bar above shows the agents tile (the helm, badge 1) and the calls tile (the cap, badge 2)](docs/images/agents-page.png)
+![The Agents page: Captain's Call with the captain's cap and 2 waiting, then fix-login-redirect blocked in amber, web-dark-mode and docs-install-guide working in green, and dotfiles idle in grey; the bar above shows the agents tile (the helm, badge 1) and Captain's Call's page item (the cap, badge 2)](docs/images/agents-page.png)
 
 *The Agents page with four agents, three of them firstmate tasks. Rendered by the touch bar's GNOME Shell extension in a headless GNOME Shell 50.1.*
 

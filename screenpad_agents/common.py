@@ -15,6 +15,7 @@ CALLS_TILE = "calls"
 PAGE = "agents"
 RUNS_TILE = "runs"
 RUNS_PAGE = "runs"
+CALLS_PAGE = "calls"
 
 CONFIG = ("screenpad", "agents.toml")
 # The app's icons: SVGs in icons/ next to the package, in the checkout as in
@@ -65,10 +66,16 @@ LAVISH_TIMEOUT = 15.0
 OPEN_TIMEOUT = 15.0
 # Asking firstmate for the board: one note in its inbox (fm-inbox.sh note).
 INBOX_TIMEOUT = 15.0
-# The card that says no board is open stays this long, unless dismissed.
-BOARD_CARD_TIMEOUT = 30
-# After asking firstmate for the board, how long the app waits for it before
-# it would ask again (seconds): taps meanwhile queue no second note.
+# After asking firstmate for the board, how long the app waits for it to be
+# open (seconds; building it takes about a minute): taps meanwhile queue no
+# second note, and the card then offers to ask again. While it waits it
+# checks every BOARD_POLL seconds, and once firstmate has replied without
+# the board open, it waits BOARD_REPLY_GRACE more at most.
+BOARD_WAIT = 180.0
+BOARD_POLL = 10.0
+BOARD_REPLY_GRACE = 30.0
+# How long a request keeps its id, so a retry replays its note rather than
+# queueing a second; firstmate may have handled an older one.
 BOARD_REQUEST_HOLD = 300.0
 
 

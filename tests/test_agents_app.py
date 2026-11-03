@@ -144,9 +144,12 @@ class AppTests(unittest.TestCase):
 
     def test_welcome_and_errors_are_logged(self):
         rig = Rig(self, self.herdr, self.firstmate)
-        rig.apps.set_placed(["agents"])
-        rig.until(lambda: any("calls" in line for line in rig.logged))
-        self.assertIn('tile "calls" has no spot; give it one with tile = "calls" in touchbar.toml', rig.logged)
+        rig.apps.set_placed([])
+        rig.until(lambda: any("has no spot" in line for line in rig.logged))
+        self.assertIn('tile "agents" has no spot; give it one with tile = "agents" in touchbar.toml', rig.logged)
+        # Captain's Call goes on the bar as its page (page = "calls"): an
+        # unplaced calls tile is no mistake, and gets no advice to place it.
+        self.assertEqual([line for line in rig.logged if '"calls"' in line], [])
         rig.app.handle({"op": "error", "request": "page", "message": "the apps page is full (8 pages)"})
         self.assertEqual(rig.logged[-1], "the touch bar refused page: the apps page is full (8 pages)")
 

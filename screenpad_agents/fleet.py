@@ -7,7 +7,10 @@ is configured), then one widget per agent, in Herdr's order so a widget stays
 where it is while its agent runs. Herdr's state colors it: working green,
 blocked amber, the rest grey. An agent's widget is named after its firstmate
 task, or else its directory. Tapping one opens its card (card.py) in place of
-the grid, until Back, an answer sent, or the agent leaving Herdr's list.
+the grid, until Back, an answer sent, or the agent leaving Herdr's list;
+tapping Captain's Call opens its view (callpage.py) in place of the grid,
+until Back. With firstmate, the app also gives the apps page Captain's Call's
+own page, "calls", the same view.
 
 The page and the tiles carry the app's icons (common.icon): a helm for the
 agents, the captain's cap for Captain's Call. On the bar a tile with an icon
@@ -24,6 +27,7 @@ from screenpad_app import clip
 from screenpad_app.common import ID as WIDGET_ID
 from screenpad_app.common import MAX_BADGE, MAX_LABEL, MAX_ROWS, MAX_TEXT, MAX_TILE_TEXT
 
+from . import callpage
 from . import card as cards
 from .common import CALLS_TILE, CAPTAIN, COLUMNS, FLEET_TILE, HELM, MIN_ROWS, PAGE, STATE_TONES, icon
 from .keymap import interrupt_keys
@@ -51,6 +55,8 @@ class Fleet:
         self.bearings = None
         self.firstmate_error = None
         self.card = None
+        self.calls_open = False  # Captain's Call's view in place of the grid
+        self.board = callpage.Board()  # the decisions board's state (boardrequest.py)
         self._panes = {}
 
     def tiles(self):
@@ -100,6 +106,14 @@ class Fleet:
         self.card = cards.Card(pane) if self.agent_of(pane) is not None else None
         return self.card
 
+    def open_calls(self):
+        """Captain's Call's view in place of the grid (with firstmate)."""
+        self.calls_open = self.firstmate
+        self.card = None
+
+    def close_calls(self):
+        self.calls_open = False
+
     def shown_card(self):
         """The card the page shows: the open one while its agent is in
         Herdr's list (the grid shows while Herdr cannot say)."""
@@ -131,7 +145,10 @@ class Fleet:
 
     def messages(self):
         """The page and the tiles, as messages for the socket."""
-        return [self.page()] + [self.fleet_tile()] + ([self.calls_tile()] if self.firstmate else [])
+        if not self.firstmate:
+            return [self.page(), self.fleet_tile()]
+        calls = callpage.page(self.bearings, self.firstmate_error, self.board)
+        return [self.page(), calls, self.fleet_tile(), self.calls_tile()]
 
     def summary(self):
         if self.herdr_error:
@@ -150,7 +167,11 @@ class Fleet:
     def page(self):
         blocked = self.counts().get("blocked", 0)
         card = self.shown_card()
-        if card is not None:
+        if self.calls_open:
+            self._panes = {}
+            widgets = callpage.widgets(self.bearings, self.firstmate_error, self.board, back=True)
+            columns, rows = callpage.COLUMNS, callpage.ROWS
+        elif card is not None:
             agent = self.agent_of(card.pane)
             self._panes = {}
             route, why = self.interrupt_route(agent)
@@ -194,14 +215,10 @@ class Fleet:
 
     def _calls(self):
         """The Captain's Call count as a badge, a line of text and a tone."""
-        if self.bearings is None:
-            return None, "firstmate unreadable" if self.firstmate_error else "reading firstmate…", "neutral"
-        n = self.bearings.calls
-        badge = ("%d+" % n if self.bearings.more else str(n)) if n or self.bearings.more else None
-        text = "%s waiting" % (badge or "none")
-        if self.firstmate_error:
-            text += " (stale)"
-        return badge and clip(badge, MAX_BADGE), text, "warning" if badge else "neutral"
+        text = callpage.summary(self.bearings, self.firstmate_error)
+        if self.bearings is not None and self.board.state == "opening":
+            text += " · opening board"
+        return callpage.badge(self.bearings), text, callpage.tone(self.bearings)
 
     def _widgets(self):
         cells = []

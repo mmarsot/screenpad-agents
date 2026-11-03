@@ -12,8 +12,9 @@ a queue (and a pipe that wakes its select):
   during a read add one read after it, not one each;
 - firstmate's control: interrupts a task's agent through fm-control.sh, which
   takes seconds, so neither reader waits on it, opens the decisions board
-  (firstmate.py) when Captain's Call is tapped, and asks firstmate for one
-  when its card's Request is chosen;
+  (firstmate.py) when Captain's Call is tapped, asks firstmate for one
+  when its card's Request is chosen, and checks for it while the app waits
+  for it (boardrequest.py);
 - the Runs page's, with [runs]: reads no-mistakes (runwatch.py).
 
 The loop keeps the connection to the touch bar through the client library's
@@ -22,19 +23,17 @@ refuses the app's protocol version), sends the page and tiles when what
 they show changed (all of them again after a reconnect), and turns touches into work for the threads: a tap on an
 agent's widget opens its card (fleet.py, card.py), whose buttons focus,
 interrupt and answer; a tap on the agents tile focuses the first blocked
-agent; a tap on Captain's Call reads firstmate again and opens firstmate's
-decisions board in the browser on the main screen, or, when no board is
-open, asks a question in the bar saying so (callcard.py), whose Request asks
-firstmate to build it: one note in its inbox, then none again until the board
-is seen open or BOARD_REQUEST_HOLD has passed (the panel answers no Captain's
-Call). Each request has its own id, kept after a failed note for
-BOARD_REQUEST_HOLD, so trying again meanwhile replays a note fm-inbox.sh may
-have saved rather than queueing a second; later a retry is a new request.
+agent; a tap on the Captain's Call widget opens its view in place of the
+grid (callpage.py), the same as the app's "calls" page: the calls waiting,
+and the decisions board's button, which opens the board in the browser on
+the main screen or asks firstmate to build it, saying when it is open or
+that it did not come (boardrequest.py); a tap on the calls tile opens the
+board straight away. Each reads firstmate again (the panel answers no
+Captain's Call).
 """
 
 import os
 import queue
-import secrets
 import select
 import sys
 import threading
@@ -42,12 +41,12 @@ import time
 
 from screenpad_app import Link
 
-from . import callcard
+from . import callpage
 from . import card as cards
+from .boardrequest import BoardRequest
 from .common import (
     APP,
-    BOARD_CARD_TIMEOUT,
-    BOARD_REQUEST_HOLD,
+    CALLS_PAGE,
     CALLS_TILE,
     FLEET_TILE,
     PAGE,
@@ -85,12 +84,8 @@ class App:
         self._threads = []
         self._told = set()
         self._dirty = False
-        self._opening = False
-        self._asked = None
-        self._asks = 0
-        self._requested = None  # when the app last asked firstmate for the board
-        self._request_id = None  # the id of the request a retry repeats
-        self._request_made = None  # when that id was made
+        self.board = BoardRequest(firstmate, self._control, self._post, self.log, self.refresh_calls, clock)
+        self.fleet.board = self.board.board
 
     # --- the worker threads ------------------------------------------------
 
@@ -174,25 +169,13 @@ class App:
 
     def _control_worker(self):
         while not self.stopping.is_set():
-            job = self._control.get()
+            try:
+                job = self._control.get(timeout=self.board.timeout())
+            except queue.Empty:
+                job = ("check",)  # the board's next check is due
             if job is None or self.stopping.is_set():
                 return
-            if job[0] == "board":
-                try:
-                    self._post("board", self.firstmate.open_board(), None)
-                except Exception as e:
-                    self._post("board", None, _why(e, FirstmateError))
-                continue
-            if job[0] == "request":
-                request_id = job[1]
-                try:
-                    note = self.firstmate.request_board(request_id)
-                    if note is None:
-                        request_id = _request_id()
-                        note = self.firstmate.request_board(request_id)
-                    self._post("requested", request_id, note, None)
-                except Exception as e:
-                    self._post("requested", request_id, None, _why(e, FirstmateError))
+            if self.board.work(job):
                 continue
             _, pane, task_id = job
             try:
@@ -219,10 +202,11 @@ class App:
         handle what the threads and the touch bar sent."""
         if self.link.connect():
             self._dirty = True  # a new connection has shown nothing yet
-            self._asked = None  # nor asked anything
         fd = self.link.fileno()
         ready, _, _ = select.select([self._wake_r] + ([fd] if fd is not None else []), [], [], timeout)
         changed = self._drain()
+        if self.board.tick():
+            changed = True
         if fd is not None and fd in ready:
             for msg in self.link.receive():
                 self.handle(msg)
@@ -279,70 +263,17 @@ class App:
             if card is not None and card.pane == pane:
                 card.interrupting = False
                 card.note = "interrupt: %s" % (done or "failed: %s" % error)
-        elif what == "board":
-            self._board(*rest)
-            return False
-        elif what == "requested":
-            self._board_requested(*rest)
-            return False
+        elif what in ("board", "look", "requested", "watched"):
+            return self.board.result(what, *rest)
         elif what == "log":
             self.log(rest[0])
             return False
         return True
 
-    def _board(self, url, error):
-        self._opening = False
-        if url is not None:
-            self._requested = self._request_id = None  # the board is there: a later request asks again
-            self.log("opened the decisions board: %s" % url)
-        elif error is not None:
-            self.log("the decisions board did not open: %s" % error)
-            self._ask(callcard.not_opened(error))
-        elif self._request_pending():
-            self.log("no decisions board is open yet; firstmate was asked for one")
-            self._ask(callcard.requested())
-        else:
-            self.log("no decisions board is open")
-            self._ask(callcard.no_board())
-
-    def _request_pending(self):
-        return self._requested is not None and self.clock() - self._requested < BOARD_REQUEST_HOLD
-
     def request_board(self):
-        """Request chosen on the card: ask firstmate for the
-        board with one note, unless a request is still pending."""
-        if self.firstmate is None:
-            return
-        if self._request_pending():
-            self._ask(callcard.requested())
-            return
-        if self._request_id is None or self.clock() - self._request_made >= BOARD_REQUEST_HOLD:
-            self._request_id, self._request_made = _request_id(), self.clock()
-        self._requested = self.clock()
-        self._control.put(("request", self._request_id))
-
-    def _board_requested(self, request_id, note, error):
-        if request_id != self._request_id:
-            self._request_id, self._request_made = request_id, self.clock()
-        if error is not None:
-            self._requested = None  # the next try repeats this request, under its id
-            self.log("the request for the decisions board failed: %s" % error)
-            self._ask(callcard.not_requested(error))
-            return
-        self.log("asked firstmate for the decisions board: %s" % note)
-        self._ask(callcard.requested())
-
-    def _ask(self, question):
-        """Show question (callcard's title, text and answers) in the bar as
-        a card, in place of the last one if it is still up."""
-        if not self.link.connected:
-            return
-        if self._asked is not None:
-            self.link.send({"op": "cancel", "id": self._asked})
-        self._asks += 1
-        self._asked = "board.%d" % self._asks
-        msg = {"op": "ask", "id": self._asked, **question, "timeout": BOARD_CARD_TIMEOUT}
-        self.link.send(msg)
+        """Request board chosen: ask firstmate for the board."""
+        if self.firstmate is not None and self.board.request():
+            self._dirty = True
 
     def _answered(self, pane, answer, why, fresh):
         card = self.fleet.card
@@ -374,17 +305,16 @@ class App:
         op = msg.get("op")
         if op == "welcome":
             for tile in msg.get("unplaced") or []:
+                if tile == CALLS_TILE:  # page = "calls" is what the bar needs for Captain's Call
+                    continue
                 self.log('tile "%s" has no spot; give it one with tile = "%s" in touchbar.toml' % (tile, tile))
             for tile in msg.get("taken") or []:
                 self.log('another app already provides the tile "%s"' % tile)
         elif op == "error":
             self.log("the touch bar refused %s: %s" % (msg.get("request"), msg.get("message")))
-        elif op == "answer" and msg.get("id") == self._asked:
-            self._asked = None
-            if msg.get("reason") == "unavailable":
-                self.log("the touch bar could not show the board's card")
-            elif msg.get("option") == callcard.REQUEST:
-                self.request_board()
+        elif op == "event" and msg.get("page") == CALLS_PAGE and self.firstmate is not None:
+            if msg.get("type") == "tap" and self.board.choose(msg.get("widget")):
+                self._dirty = True
         elif op == "event" and msg.get("page") == PAGE and msg.get("type") in ("tap", "long"):
             self._touch(msg.get("widget"), msg["type"])
         elif op == "event" and msg.get("page") == RUNS_PAGE and self.runs is not None:
@@ -401,12 +331,20 @@ class App:
 
     def _touch(self, widget, touch):
         card = self.fleet.shown_card()
-        if card is not None:
+        if self.fleet.calls_open:
+            if touch != "tap":
+                return
+            if widget == callpage.BACK:
+                self.fleet.close_calls()
+                self._dirty = True
+            elif self.board.choose(widget):
+                self._dirty = True
+        elif card is not None:
             self._card_touch(card, widget, touch)
         elif touch != "tap":
             return
         elif widget == CALLS_WIDGET:
-            self.captains_call()
+            self.open_calls()
         else:
             pane = self.fleet.pane_of(widget)
             if pane is not None and self.fleet.open_card(pane) is not None:
@@ -452,14 +390,19 @@ class App:
             self._read_firstmate.set()
 
     def captains_call(self):
-        """A tap on Captain's Call: read firstmate again, and open its
-        decisions board (one at a time: taps while it opens add nothing)."""
-        if self.firstmate is None:
-            return
-        self.refresh_calls()
-        if not self._opening:
-            self._opening = True
-            self._control.put(("board",))
+        """A tap on the calls tile: read firstmate again, and open its
+        decisions board."""
+        if self.firstmate is not None:
+            self.board.tap()
+
+    def open_calls(self):
+        """A tap on the Captain's Call widget: its view in place of the
+        grid, firstmate read again and the board looked for."""
+        if self.firstmate is not None:
+            self.fleet.open_calls()
+            self._jobs.put(("watch", None))
+            self.board.look()
+            self._dirty = True
 
     def close(self):
         self.stopping.set()
@@ -477,9 +420,3 @@ class App:
             for fd in (self._wake_r, self._wake_w):
                 os.close(fd)
             self._wake_r = self._wake_w = -1
-
-
-def _request_id():
-    """A new id for a request of the decisions board, as fm-inbox.sh note
-    --request-id takes it."""
-    return "screenpad-board-%d-%s" % (time.time(), secrets.token_hex(4))
