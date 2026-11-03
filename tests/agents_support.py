@@ -202,9 +202,10 @@ def fake_board(code):
 def fake_inbox(code):
     """firstmate's bin/fm-inbox.sh in a fake checkout: records FM_HOME and
     its arguments in inbox.jsonl, next to it, and prints what note prints:
-    "replay <id>" for a --request-id it saw before; fails when inbox.fail
-    exists, after keeping the request id (as a saved note whose wake failed).
-    It writes into no firstmate home."""
+    "replay <id>" for a --request-id it saw before, and that firstmate has
+    already acknowledged it when the id is listed in inbox.handled; fails
+    when inbox.fail exists, after keeping the request id (as a saved note
+    whose wake failed). It writes into no firstmate home."""
     os.makedirs(os.path.join(code, "bin"), exist_ok=True)
     return write_script(
         os.path.join(code, "bin", "fm-inbox.sh"),
@@ -226,6 +227,9 @@ def fake_inbox(code):
             sys.exit(1)
         if rid in ids:
             print("replay 1793706159-abc123")
+            handled = os.path.join(here, "inbox.handled")
+            if os.path.exists(handled) and rid in open(handled).read().split():
+                print("firstmate has already acknowledged this note.")
             sys.exit(0)
         print("queued 1793706159-abc123")
         print("  " + sys.argv[-1])

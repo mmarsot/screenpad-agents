@@ -166,6 +166,11 @@ class BoardTests(unittest.TestCase):
         # The same request id again is fm-inbox.sh's replay, not a new note.
         os.remove(fail)
         self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "replay 1793706159-abc123")
+        # Once firstmate has handled it, a replay wakes nothing: the app must
+        # not hold an old id past BOARD_REQUEST_HOLD (see the loop's tests).
+        with open(os.path.join(self.code, "bin", "inbox.handled"), "w") as f:
+            f.write("screenpad-board-1-ab\n")
+        self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "replay 1793706159-abc123")
         os.remove(os.path.join(self.code, "bin", "fm-inbox.sh"))
         with self.assertRaisesRegex(FirstmateError, "firstmate has no bin/fm-inbox.sh"):
             self.fm.request_board("screenpad-board-1-ab")
@@ -278,6 +283,7 @@ class BoardTapTests(unittest.TestCase):
         rig.until(lambda: self.firstmate.requests == 1)
         # Past the hold, the card offers to ask again, as a new request.
         rig.app._requested -= BOARD_REQUEST_HOLD
+        rig.app._request_made -= BOARD_REQUEST_HOLD
         rig.apps.asks.choose(self.no_board_card(rig), 0)
         rig.until(lambda: self.firstmate.requests == 2)
         # Once the board is seen open, a later request asks again at once.
@@ -308,6 +314,22 @@ class BoardTapTests(unittest.TestCase):
         # it saved before failing instead of queueing a second one.
         ids = self.firstmate.request_ids
         self.assertEqual((len(ids), ids[0]), (2, ids[1]))
+
+    def test_a_failed_request_older_than_the_hold_is_asked_anew(self):
+        rig = self.rig()
+        self.firstmate.board = None
+        self.firstmate.request_error = "fm-inbox.sh note failed: exit 3"
+        rig.apps.asks.choose(self.no_board_card(rig), 0)
+        rig.until(lambda: [a.title for a in rig.apps.asks.queue] == ["Decisions board not requested"])
+        # firstmate may have handled that note since: replaying its id would
+        # wake nothing, so past the hold the retry is a new request.
+        rig.app._request_made -= BOARD_REQUEST_HOLD
+        self.firstmate.request_error = None
+        rig.apps.asks.choose(self.no_board_card(rig), 0)
+        rig.until(lambda: self.asked(rig) == [REQUESTED_CARD])
+        ids = self.firstmate.request_ids
+        self.assertEqual(len(ids), 2)
+        self.assertNotEqual(ids[0], ids[1])
 
     def test_a_failure_is_shown_on_the_card(self):
         rig = self.rig()

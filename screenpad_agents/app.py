@@ -26,8 +26,9 @@ decisions board in the browser on the main screen, or, when no board is
 open, asks a question in the bar saying so, whose Open decisions board asks
 firstmate to build it: one note in its inbox, then none again until the board
 is seen open or BOARD_REQUEST_HOLD has passed (the panel answers no Captain's
-Call). Each request has its own id, kept after a failed note, so trying again
-replays a note fm-inbox.sh may have saved rather than queueing a second.
+Call). Each request has its own id, kept after a failed note for
+BOARD_REQUEST_HOLD, so trying again meanwhile replays a note fm-inbox.sh may
+have saved rather than queueing a second; later a retry is a new request.
 """
 
 import os
@@ -78,6 +79,7 @@ class App:
         self._asks = 0
         self._requested = None  # when the app last asked firstmate for the board
         self._request_id = None  # the id of the request a retry repeats
+        self._request_made = None  # when that id was made
 
     # --- the worker threads ------------------------------------------------
 
@@ -288,8 +290,9 @@ class App:
         if self._request_pending():
             self._ask("Decisions board requested", REQUESTED)
             return
-        if self._request_id is None or self._requested is not None:
+        if self._request_id is None or self.clock() - self._request_made >= BOARD_REQUEST_HOLD:
             self._request_id = "screenpad-board-%d-%s" % (time.time(), secrets.token_hex(4))
+            self._request_made = self.clock()
         self._requested = self.clock()
         self._control.put(("request", self._request_id))
 
