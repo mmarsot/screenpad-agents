@@ -1,11 +1,14 @@
 """The fleet as the touch bar shows it: the agents page and tiles, checked
 against the app protocol by the stand-in touch bar (bar_support)."""
 
+import os
 import unittest
+from xml.etree import ElementTree
 
 from agents_support import SESSION, task
 from bar_support import Apps, FakeClient
 
+from screenpad_agents.common import ICONS, icon
 from screenpad_agents.firstmate import Bearings
 from screenpad_agents.fleet import Fleet, widget_id
 from screenpad_agents.herdr import Agent
@@ -21,6 +24,9 @@ def fleet(agents=(), firstmate=True, calls=None, tasks=None):
 
 def widgets(f):
     return {w["id"]: w for w in f.page()["widgets"]}
+
+
+HELM, CAPTAIN = ICONS + "/helm.svg", ICONS + "/captain.svg"
 
 
 class FleetTests(unittest.TestCase):
@@ -47,8 +53,8 @@ class FleetTests(unittest.TestCase):
         )
         page = f.page()
         self.assertEqual(
-            (page["title"], page["text"], page["tone"], page["badge"]),
-            ("Agents", "3 agents · 1 blocked · 1 working", "warning", "1"),
+            (page["title"], page["icon"], page["text"], page["tone"], page["badge"]),
+            ("Agents", HELM, "3 agents · 1 blocked · 1 working", "warning", "1"),
         )
         got = [(w["id"], w["col"], w["row"], w.get("label"), w.get("tone")) for w in page["widgets"]]
         self.assertEqual(
@@ -61,14 +67,15 @@ class FleetTests(unittest.TestCase):
             ],
         )
         self.assertEqual(widgets(f)["agent.w1.p1"]["text"], "claude · blocked · waiting on tests")
-        self.assertEqual(widgets(f)["calls"]["badge"], "2")
+        self.assertEqual((widgets(f)["calls"]["badge"], widgets(f)["calls"]["icon"]), ("2", CAPTAIN))
+        self.assertNotIn("icon", widgets(f)["agent.w1.p1"])
         apps = self.accepted(f)
         self.assertEqual([w.id for w in apps.pages["agents"].widgets], [w["id"] for w in page["widgets"]])
         self.assertEqual(
             apps.provided()["agents"],
-            {"label": "3 agents", "text": "1 blocked", "badge": "1", "tone": "warning"},
+            {"icon": HELM, "label": "3 agents", "text": "1 blocked", "badge": "1", "tone": "warning"},
         )
-        self.assertEqual(apps.provided()["calls"]["badge"], "2")
+        self.assertEqual((apps.provided()["calls"]["badge"], apps.provided()["calls"]["icon"]), ("2", CAPTAIN))
 
     def test_taps_map_to_panes(self):
         f = fleet([("w1:p1", "claude", "idle"), ("w2:p1", "codex", "blocked"), ("w3:p1", "pi", "blocked")])
@@ -94,6 +101,9 @@ class FleetTests(unittest.TestCase):
                 f = fleet(many[:n], calls=0)
                 page = f.page()
                 self.assertEqual(page["rows"], rows)
+                # Captain's Call has its icon only in the tallest cells: a
+                # shorter one has no room for icon, label and text.
+                self.assertEqual(page["widgets"][0].get("icon"), CAPTAIN if rows == 2 else None)
                 self.accepted(f)
         page = fleet(many, calls=0).page()
         self.assertEqual(len(page["widgets"]), 16)
@@ -143,17 +153,39 @@ class FleetTests(unittest.TestCase):
     def test_captain_calls(self):
         f = fleet(calls=0)
         self.assertEqual(
-            f.calls_tile(), {"op": "set", "tile": "calls", "label": "Calls", "text": "none waiting", "tone": "neutral"}
+            f.calls_tile(),
+            {
+                "op": "set",
+                "tile": "calls",
+                "label": "Calls",
+                "text": "none waiting",
+                "tone": "neutral",
+                "icon": CAPTAIN,
+            },
         )
         f.set_bearings(Bearings(20, True, {}))
         self.assertEqual(f.calls_tile()["badge"], "20+")
         self.assertEqual(f.calls_tile()["text"], "20+ waiting")
         f.set_bearings(None, "firstmate's reader failed")
+        # On the bar a tile with an icon shows only it: one that cannot be
+        # read shows its words instead.
         self.assertEqual(f.calls_tile()["text"], "20+ waiting (stale)")
+        self.assertNotIn("icon", f.calls_tile())
         f = fleet()
         f.set_bearings(None, "firstmate's reader failed")
         self.assertEqual(f.calls_tile()["text"], "firstmate unreadable")
+        self.assertNotIn("icon", f.calls_tile())
         self.accepted(f)
+
+    def test_the_icons_are_square_svgs_in_icons(self):
+        names = {"helm", "captain", "lighthouse", "back", "spyglass", "anchor"}
+        self.assertEqual({n[: -len(".svg")] for n in os.listdir(ICONS)}, names)
+        for name in names:
+            path = icon(name)
+            self.assertTrue(os.path.isabs(path) and path.startswith(ICONS + os.sep), path)
+            svg = ElementTree.parse(path).getroot()
+            self.assertEqual(svg.tag, "{http://www.w3.org/2000/svg}svg", name)
+            self.assertEqual(svg.get("viewBox"), "0 0 64 64", name)
 
     def test_long_names_are_clipped_to_the_limits(self):
         name = "a-task-with-a-really-long-name-that-goes-on"

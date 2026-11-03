@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Captain's Call: the captain's peaked cap. -->
+  <circle cx="32" cy="32" r="30" fill="#16294a" stroke="#e8eef7" stroke-width="2.5"/>
+  <path d="M10 30 C10 19 21 14 32 14 C43 14 54 19 54 30 C54 32 52 33 49 33 L15 33 C12 33 10 32 10 30 Z" fill="#ffffff"/>
+  <rect x="15" y="32" width="34" height="9" rx="1.5" fill="#101418"/>
+  <line x1="15.5" y1="36.5" x2="48.5" y2="36.5" stroke="#f2b84b" stroke-width="1.8"/>
+  <path d="M14 41 L50 41 C49 47 41 50 32 50 C23 50 15 47 14 41 Z" fill="#05070a" stroke="#e8eef7" stroke-width="1.2"/>
+  <circle cx="32" cy="24" r="6.5" fill="#f2b84b"/>
+  <g stroke="#16294a" stroke-width="1.6" fill="none" stroke-linecap="round">
+    <circle cx="32" cy="20.6" r="1.4"/>
+    <line x1="32" y1="22" x2="32" y2="28.5"/>
+    <line x1="29.3" y1="23.6" x2="34.7" y2="23.6"/>
+    <path d="M28.6 26 C29.5 28.5 34.5 28.5 35.4 26"/>
+  </g>
+</svg>

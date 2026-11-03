@@ -17,6 +17,12 @@ RUNS_TILE = "runs"
 RUNS_PAGE = "runs"
 
 CONFIG = ("screenpad", "agents.toml")
+# The app's icons: SVGs in icons/ next to the package, in the checkout as in
+# the installed copy (install.sh), given to the touch bar by absolute path.
+# Each is drawn on its own navy disc, so it reads on every tone.
+ICONS = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "icons")
+HELM, CAPTAIN, LIGHTHOUSE = "helm", "captain", "lighthouse"
+BACK_ICON, FOCUS_ICON, INTERRUPT_ICON = "back", "spyglass", "anchor"
 # What the config error points to: install.sh installs no docs.
 DOCS = "https://github.com/mmarsot/screenpad-agents/blob/main/docs/agents.md"
 
@@ -86,6 +92,11 @@ def socket_path():
         return screenpad_app.socket_path()
     except screenpad_app.TouchbarError as e:
         raise AgentsError(str(e))
+
+
+def icon(name):
+    """The absolute path of one of the app's icons."""
+    return os.path.join(ICONS, name + ".svg")
 
 
 def config_path():

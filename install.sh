@@ -13,7 +13,8 @@ set -eu
 
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 PYTHON=/usr/bin/python3
-# The program: agents.py with its package, and the library in vendor/.
+# The program: agents.py with its package, its icons in icons/, and the
+# library in vendor/.
 LIB=$HOME/.local/lib/screenpad-agents
 # A relative symlink to LIB/agents.py; the unit runs it.
 BIN=$HOME/.local/bin/screenpad-agents
@@ -48,6 +49,9 @@ install_all() {
     install -D -m 0755 "$here/agents.py" "$new/agents.py"
     for f in "$here"/screenpad_agents/*.py; do
         install -D -m 0644 "$f" "$new/screenpad_agents/$(basename "$f")"
+    done
+    for f in "$here"/icons/*.svg; do
+        install -D -m 0644 "$f" "$new/icons/$(basename "$f")"
     done
     "$PYTHON" -m pip install --quiet --disable-pip-version-check --no-deps --target "$new/vendor" "$(library)" ||
         { rm -rf "$new"; die "could not install the client library screenpad_app"; }

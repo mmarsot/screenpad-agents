@@ -4,7 +4,7 @@ the opener in a scope of its own (stand-ins for both here, so nothing opens
 on the screen and no unit is made), asking
 firstmate for it with one fm-inbox.sh note (a stand-in too, writing into no
 firstmate home), and the tap in the loop: the board opened, or the card
-saying none is open, whose Open decisions board asks firstmate once."""
+saying none is open, whose Request asks firstmate once."""
 
 import os
 import signal
@@ -18,17 +18,19 @@ from unittest import mock
 from agents_support import FakeFirstmate, FakeHerdr, Rig, fake_bearings, read_calls, task
 from desktop_support import fake_lavish, fake_opener, fake_scope, lavish_listing
 
+from screenpad_agents import callcard
 from screenpad_agents.common import BOARD_REQUEST_HOLD
 from screenpad_agents.firstmate import BOARD_REQUEST, SCOPE, Firstmate, FirstmateError, listed_url
 
 URL = "http://127.0.0.1:4387/session/b2403039846e8e74"
-NO_BOARD = "No decisions board open"
-NO_BOARD_TEXT = "firstmate builds it: Open decisions board asks it for /bearings lavish."
+NO_BOARD = "No board open"
+NO_BOARD_TEXT = "Request asks firstmate to build the decisions board; Lavish then opens it on the main screen."
 REQUESTED_CARD = (
-    "Decisions board requested",
-    "firstmate was asked for /bearings lavish. Lavish opens the board once it is built; then a tap here opens it.",
+    "Board requested",
+    "firstmate was asked to build the decisions board. Lavish opens it once built; tap Captain's Call again then.",
     ["OK"],
 )
+NOT_OPENED, NOT_REQUESTED = "Board not opened", "Request failed"
 
 
 class BoardTests(unittest.TestCase):
@@ -273,7 +275,7 @@ class BoardTapTests(unittest.TestCase):
         rig = self.rig()
         self.firstmate.board_error = "systemd-run not found"
         rig.apps.press(rig.client(), "agents", "calls", "tap")
-        rig.until(lambda: self.asked(rig) == [("Decisions board not opened", "systemd-run not found", ["OK"])])
+        rig.until(lambda: self.asked(rig) == [(NOT_OPENED, "systemd-run not found", ["OK"])])
         self.assertEqual(self.firstmate.opened, [])
         self.assertEqual(rig.logged, ["the decisions board did not open: systemd-run not found"])
 
@@ -293,7 +295,7 @@ class BoardTapTests(unittest.TestCase):
         rig = self.rig()
         self.firstmate.board = None
         rig.apps.press(rig.client(), "agents", "calls", "tap")
-        card = (NO_BOARD, NO_BOARD_TEXT, ["Open decisions board", "OK"])
+        card = (NO_BOARD, NO_BOARD_TEXT, ["Request"])
         rig.until(lambda: self.asked(rig) == [card])
         self.assertEqual(self.firstmate.opened, [])
         self.assertEqual(rig.logged, ["no decisions board is open"])
@@ -302,9 +304,11 @@ class BoardTapTests(unittest.TestCase):
         rig.until(lambda: self.firstmate.board_calls == 2)
         rig.turn(10)
         self.assertEqual(self.asked(rig), [card])
-        # OK closes it, and does nothing more: no note to firstmate either.
+        # Its only answer is Request: the card's own Dismiss closes it, and
+        # does nothing more: no note to firstmate either.
         ask = rig.apps.asks.queue[0]
-        rig.apps.asks.choose(ask, 1)
+        self.assertEqual(ask.options, [{"id": callcard.REQUEST, "label": "Request", "tone": "accept"}])
+        rig.apps.asks.dismiss(ask)
         rig.turn(10)
         self.assertEqual((self.asked(rig), rig.app._asked), ([], None))
         self.assertEqual((self.herdr.sent, self.firstmate.interrupted, self.firstmate.opened), ([], [], []))
@@ -329,7 +333,7 @@ class BoardTapTests(unittest.TestCase):
         rig.until(lambda: self.firstmate.board_calls == calls + 1)
         rig.turn(10)
         self.assertEqual(self.asked(rig), [REQUESTED_CARD])
-        rig.app.request_board()  # an Open decisions board chosen on an older card
+        rig.app.request_board()  # a Request chosen on an older card
         rig.turn(10)
         self.assertEqual((self.firstmate.requests, self.asked(rig)), (1, [REQUESTED_CARD]))
         self.assertEqual((self.herdr.sent, self.firstmate.interrupted, self.firstmate.opened), ([], [], []))
@@ -362,7 +366,7 @@ class BoardTapTests(unittest.TestCase):
         self.firstmate.board = None
         self.firstmate.request_error = "fm-inbox.sh note failed: exit 1"
         rig.apps.asks.choose(self.no_board_card(rig), 0)
-        failed = ("Decisions board not requested", "fm-inbox.sh note failed: exit 1", ["OK"])
+        failed = (NOT_REQUESTED, "fm-inbox.sh note failed: exit 1", ["OK"])
         rig.until(lambda: self.asked(rig) == [failed])
         self.assertIn("the request for the decisions board failed: fm-inbox.sh note failed: exit 1", rig.logged)
         self.firstmate.request_error = None
@@ -378,7 +382,7 @@ class BoardTapTests(unittest.TestCase):
         self.firstmate.board = None
         self.firstmate.request_error = "fm-inbox.sh note failed: exit 3"
         rig.apps.asks.choose(self.no_board_card(rig), 0)
-        rig.until(lambda: [a.title for a in rig.apps.asks.queue] == ["Decisions board not requested"])
+        rig.until(lambda: [a.title for a in rig.apps.asks.queue] == [NOT_REQUESTED])
         # firstmate handled that note meanwhile: the retry's replay wakes
         # nothing, so the same job asks once more, under a new id, and only
         # that note makes the card say it was requested.
@@ -399,7 +403,7 @@ class BoardTapTests(unittest.TestCase):
         self.firstmate.board = None
         self.firstmate.request_error = "fm-inbox.sh note failed: exit 3"
         rig.apps.asks.choose(self.no_board_card(rig), 0)
-        rig.until(lambda: [a.title for a in rig.apps.asks.queue] == ["Decisions board not requested"])
+        rig.until(lambda: [a.title for a in rig.apps.asks.queue] == [NOT_REQUESTED])
         # firstmate may have handled that note since: replaying its id would
         # wake nothing, so past the hold the retry is a new request.
         rig.app._request_made -= BOARD_REQUEST_HOLD
@@ -414,11 +418,21 @@ class BoardTapTests(unittest.TestCase):
         rig = self.rig()
         self.firstmate.board_error = "lavish-axi failed: server unreachable"
         rig.apps.press(rig.client(), "agents", "calls", "tap")
-        rig.until(lambda: self.asked(rig) == [("Decisions board not opened", self.firstmate.board_error, ["OK"])])
+        rig.until(lambda: self.asked(rig) == [(NOT_OPENED, self.firstmate.board_error, ["OK"])])
         self.assertEqual(rig.logged, ["the decisions board did not open: lavish-axi failed: server unreachable"])
         self.firstmate.board_error = RuntimeError("boom")
         rig.apps.press(rig.client(), "agents", "calls", "tap")
-        rig.until(lambda: self.asked(rig) == [("Decisions board not opened", "RuntimeError: boom", ["OK"])])
+        rig.until(lambda: self.asked(rig) == [(NOT_OPENED, "RuntimeError: boom", ["OK"])])
+        # A long error is cut at a word to fit the card; the log keeps it whole.
+        error = "lavish-axi failed: " + "the session listing could not be read " * 5
+        self.firstmate.board_error = error
+        rig.apps.press(rig.client(), "agents", "calls", "tap")
+        rig.until(lambda: [a.text.startswith("lavish-axi") for a in rig.apps.asks.queue] == [True])
+        self.assertEqual(rig.apps.asks.queue[0].title, NOT_OPENED)
+        text = rig.apps.asks.queue[0].text
+        self.assertLessEqual(len(text), callcard.TEXT_CHARS)
+        self.assertTrue(text.endswith("…") and " ".join(error.split()).startswith(text[:-1]))
+        self.assertIn("the decisions board did not open: " + error, rig.logged)
         self.firstmate.board_error = None
         rig.apps.press(rig.client(), "agents", "calls", "tap")
         rig.until(lambda: self.firstmate.opened == [FakeFirstmate.BOARD])

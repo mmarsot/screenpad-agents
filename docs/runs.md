@@ -6,7 +6,7 @@ With a `[runs]` table in its config, the [agent app](agents.md) adds a second pa
 - **each run joined to its agent and its firstmate task**: a run shows under the task's name when it is one, otherwise under its branch, with what it is doing (`running · review`, `waiting on you · review`, `failed · push`, `passed · PR #12`);
 - **a warning** when one agent, one repo copy or one branch has more than one active run: normally there is at most one per agent. The project's widget turns red and says so, and the runs involved carry a `2+` badge;
 - **a run's card** when you tap it: its steps, findings and how it ended, and **Focus** to its agent's pane;
-- an optional **`runs` tile** for the bar: how many runs are active, and how many need you.
+- an optional **`runs` tile** for the bar: a lighthouse, with how many runs need you (the home page's list adds how many are active). The Runs page has the lighthouse too, in the home page's list; see [its icons](agents.md#its-icons).
 
 ## Turning it on
 
@@ -75,7 +75,7 @@ Tapping a run opens its card in place of the grid, until **Back** or the run lea
 - the findings' ids and severities from the last round of each step that has findings (at most six named, the rest counted), or no-mistakes' own summary (`6 info`);
 - `waiting on a decision: answer it in the agent's pane` while it waits at a gate, then the outcome and error once it ended.
 
-**Focus** focuses the pane of the run's agent in Herdr, like Focus on an agent's card; with no agent joined it is dimmed. The card answers nothing: a gate is answered where the run is driven, in the agent's pane.
+**Focus** (a spyglass) focuses the pane of the run's agent in Herdr, like Focus on an agent's card; with no agent joined it is dimmed and says so in place of its spyglass. The card answers nothing: a gate is answered where the run is driven, in the agent's pane.
 
 ## How it reads
 
@@ -96,7 +96,7 @@ Each call takes about 30 ms. They run in a thread of their own, off the app's lo
 
 | Problem | Where to look |
 |---|---|
-| The Runs page says **no-mistakes unavailable** | no-mistakes could not be run in any project; `screenpad-agents show` prints why. Is `no-mistakes` on the unit's `PATH` (else set `[runs] command`)? |
+| The Runs page or the `runs` tile says **no-mistakes unavailable** | no-mistakes could not be run in any project (the tile says so in place of its lighthouse, even while the page still shows the last runs read); `screenpad-agents show` prints why. Is `no-mistakes` on the unit's `PATH` (else set `[runs] command`)? |
 | A configured repo says `repo not initialized` | no-mistakes does not watch it: `no-mistakes init` there |
 | **No projects** | none of the directories configured or found is a repository no-mistakes watches |
 | A run shows without its agent or task | no repo copy the app knows has the run's branch checked out, or no Herdr agent's `cwd` is that copy; `screenpad-agents show` lists each run with its pane |

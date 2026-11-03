@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Interrupt: drop anchor, the agent stops where it is. -->
+  <circle cx="32" cy="32" r="30" fill="#16294a" stroke="#e8eef7" stroke-width="2.5"/>
+  <g fill="none" stroke="#ffffff" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="32" cy="13.5" r="4.2"/>
+    <line x1="32" y1="18" x2="32" y2="52"/>
+    <line x1="22" y1="25" x2="42" y2="25"/>
+    <path d="M14 37 C15 47 23 52 32 52 C41 52 49 47 50 37"/>
+  </g>
+  <g fill="#ffffff">
+    <path d="M9.5 39.5 L14 31.5 L19 39 Z"/>
+    <path d="M54.5 39.5 L50 31.5 L45 39 Z"/>
+  </g>
+</svg>

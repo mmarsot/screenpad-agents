@@ -8,6 +8,13 @@ where it is while its agent runs. Herdr's state colors it: working green,
 blocked amber, the rest grey. An agent's widget is named after its firstmate
 task, or else its directory. Tapping one opens its card (card.py) in place of
 the grid, until Back, an answer sent, or the agent leaving Herdr's list.
+
+The page and the tiles carry the app's icons (common.icon): a helm for the
+agents, the captain's cap for Captain's Call. On the bar a tile with an icon
+shows only it, with its badge and tone, so a tile whose source cannot be
+read shows its words instead. The Captain's Call widget has its icon only
+while the grid has MIN_ROWS rows: in a shorter cell, icon, label and text
+would not fit.
 """
 
 import hashlib
@@ -18,7 +25,7 @@ from screenpad_app.common import ID as WIDGET_ID
 from screenpad_app.common import MAX_BADGE, MAX_LABEL, MAX_ROWS, MAX_TEXT, MAX_TILE_TEXT
 
 from . import card as cards
-from .common import CALLS_TILE, COLUMNS, FLEET_TILE, MIN_ROWS, PAGE, STATE_TONES
+from .common import CALLS_TILE, CAPTAIN, COLUMNS, FLEET_TILE, HELM, MIN_ROWS, PAGE, STATE_TONES, icon
 from .keymap import interrupt_keys
 
 CALLS_WIDGET = "calls"
@@ -152,7 +159,8 @@ class Fleet:
         else:
             widgets, rows = self._widgets()
             columns = COLUMNS
-        msg = {"op": "page", "page": PAGE, "title": "Agents", "text": clip(self.summary(), MAX_TILE_TEXT)}
+        msg = {"op": "page", "page": PAGE, "title": "Agents", "icon": icon(HELM)}
+        msg["text"] = clip(self.summary(), MAX_TILE_TEXT)
         msg.update({"tone": self.tone(), "columns": columns, "rows": rows, "widgets": widgets})
         if blocked:
             msg["badge"] = clip(str(blocked), MAX_BADGE)
@@ -169,6 +177,8 @@ class Fleet:
             text = "Herdr unavailable"
         if text:
             msg["text"] = clip(text, MAX_TILE_TEXT)
+        if not self.herdr_error:
+            msg["icon"] = icon(HELM)
         if counts.get("blocked"):
             msg["badge"] = clip(str(counts["blocked"]), MAX_BADGE)
         return msg
@@ -176,6 +186,8 @@ class Fleet:
     def calls_tile(self):
         badge, text, tone = self._calls()
         msg = {"op": "set", "tile": CALLS_TILE, "label": "Calls", "text": clip(text, MAX_TILE_TEXT), "tone": tone}
+        if self.bearings is not None and not self.firstmate_error:
+            msg["icon"] = icon(CAPTAIN)
         if badge:
             msg["badge"] = badge
         return msg
@@ -214,6 +226,8 @@ class Fleet:
             cells = cells[: room - 1] + [{"id": "more", "label": "+%d more" % hidden, "touch": "none"}]
         for i, c in enumerate(cells):
             c["col"], c["row"] = i % COLUMNS, i // COLUMNS
+        if self.firstmate and rows <= MIN_ROWS:
+            cells[0]["icon"] = icon(CAPTAIN)
         return cells, rows
 
     def _note(self):

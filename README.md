@@ -10,7 +10,7 @@ Puts your coding agents on the ASUS ScreenPad's touch bar, as an app of [screenp
 
 It is installed off and runs only once you write its config. [The agent app](docs/agents.md) explains what it shows, its config and how it reads and acts.
 
-![The Agents page: Captain's Call with 2 waiting, then fix-login-redirect blocked in amber, web-dark-mode and docs-install-guide working in green, and dotfiles idle in grey; the bar above shows the agents tile (4 agents, 1 blocked) and the calls tile (2 waiting)](docs/images/agents-page.png)
+![The Agents page: Captain's Call with the captain's cap and 2 waiting, then fix-login-redirect blocked in amber, web-dark-mode and docs-install-guide working in green, and dotfiles idle in grey; the bar above shows the agents tile (the helm, badge 1) and the calls tile (the cap, badge 2)](docs/images/agents-page.png)
 
 *The Agents page with four agents, three of them firstmate tasks. Rendered by the touch bar's GNOME Shell extension in a headless GNOME Shell 50.1.*
 
@@ -43,7 +43,7 @@ It installs, under your home:
 
 | Path | What it is |
 |---|---|
-| `~/.local/lib/screenpad-agents/` | the program: `agents.py`, its package `screenpad_agents/`, and in `vendor/` the touch bar's client library `screenpad_app`, which pip fetches from screenpad-linux at the commit `pyproject.toml` pins |
+| `~/.local/lib/screenpad-agents/` | the program: `agents.py`, its package `screenpad_agents/`, its icons in `icons/`, and in `vendor/` the touch bar's client library `screenpad_app`, which pip fetches from screenpad-linux at the commit `pyproject.toml` pins |
 | `~/.local/bin/screenpad-agents` | the command, a link to `agents.py` (`~/.local/bin` should be on your `PATH`) |
 | `~/.local/share/systemd/user/screenpad-agents.service` | its user unit, in `$XDG_DATA_HOME` when you set it; installed but not enabled, and it starts only once `~/.config/screenpad/agents.toml` exists |
 
