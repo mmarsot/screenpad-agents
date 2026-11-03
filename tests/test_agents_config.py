@@ -61,6 +61,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(c.lavish, ["/usr/bin/node", "/opt/lavish-axi"])
         _, firstmate = clients(c)
         self.assertEqual((firstmate.board, firstmate.lavish, firstmate.opener), (c.board, c.lavish, ["gio", "open"]))
+        self.assertEqual(firstmate.scope, ["systemd-run", "--user", "--scope", "--collect", "--quiet", "--"])
         self.assertEqual(firstmate.inbox, c.inbox)
 
     def test_the_clients_interrupt_through_the_configured_control_plane(self):

@@ -26,9 +26,16 @@ are answered; the panel answers none. Its file is what firstmate says,
 
 and it is open when Lavish's own session listing (lavish-axi, run with no
 argument) shows that file "open", with its session's URL. That URL, and only
-a loopback http one, is handed to the desktop's URL handler (gio open). With
-no session open nothing is built or armed from here: firstmate composes the
-board. The panel can ask it to, with one note in firstmate's inbox,
+a loopback http one, is handed to the desktop's URL handler in a transient
+scope of its own,
+
+  systemd-run --user --scope --collect --quiet -- gio open <url>
+
+so a browser it starts is never in the app's unit, whose MemoryMax (64M) it
+would count against: a browser started there got the app and itself
+OOM-killed. Without systemd-run nothing is opened. With no session open
+nothing is built or armed from here: firstmate composes the board. The panel
+can ask it to, with one note in firstmate's inbox,
 
   FM_HOME=<home> <code>/bin/fm-inbox.sh note --json --request-id <id> -- <BOARD_REQUEST>
 
@@ -41,6 +48,7 @@ queueing a second one.
 import json
 import os
 import re
+import shutil
 import subprocess
 
 from .common import (
@@ -67,6 +75,11 @@ BOARD_REQUEST = (
     "Please open the decisions board: /bearings lavish. "
     "Asked from Captain's Call on the ScreenPad, where no decisions board is open."
 )
+
+# The desktop's URL handler, and the transient scope (a cgroup of its own,
+# outside the app's unit) it runs in.
+OPENER = ("gio", "open")
+SCOPE = ("systemd-run", "--user", "--scope", "--collect", "--quiet", "--")
 
 # What fm-inbox.sh note --json prints.
 NOTE_SCHEMA = "fm-inbox-note.v1"
@@ -125,10 +138,12 @@ class Firstmate:
         board=None,
         inbox=None,
         lavish=("lavish-axi",),
-        opener=("gio", "open"),
+        opener=OPENER,
+        scope=SCOPE,
     ):
         self.home, self.bearings, self.control, self._run, self.timeout = home, bearings, control, run, timeout
         self.board, self.inbox, self.lavish, self.opener = board, inbox, list(lavish), list(opener)
+        self.scope = list(scope)
 
     def read(self):
         """The Bearings now; FirstmateError when the reader fails."""
@@ -161,11 +176,18 @@ class Firstmate:
         return listed_url(listing.stdout or "", os.path.realpath(lines[0]))
 
     def open_board(self):
-        """Open the decisions board in the browser: its URL, or None when no
-        board is open (then nothing is opened); FirstmateError on a failure."""
+        """Open the decisions board in the browser, the opener in a scope of
+        its own: its URL, or None when no board is open (then nothing is
+        opened); FirstmateError on a failure, a missing or failed systemd-run
+        (then the opener did not run) or the opener's."""
         url = self.board_url()
-        if url is not None:
-            self._call(self.opener + [url], "opening the board", OPEN_TIMEOUT, home=False, detach=True)
+        if url is None:
+            return None
+        scope = shutil.which(self.scope[0])
+        if not scope:
+            raise FirstmateError("%s not found" % self.scope[0])
+        argv = [scope] + self.scope[1:] + self.opener + [url]
+        self._call(argv, "opening the board", OPEN_TIMEOUT, home=False, detach=True)
         return url
 
     def request_board(self, request_id):

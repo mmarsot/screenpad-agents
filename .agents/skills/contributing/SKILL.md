@@ -48,7 +48,7 @@ The touch bar, its config and the app protocol are documented in [screenpad-linu
 
 ## Tests
 
-- `tests/` holds stdlib `unittest` tests, one file per area: `test_agents_*.py` (the agent app; the [agents](../agents/SKILL.md) skill lists them), `test_install.py` (`install.sh` and the library's pin), `test_skills.py` (the skills and this index). `agents_support.py` holds what the app's tests share and puts the checkout and `vendor/` on `sys.path`; `bar_support.py` is the stand-in touch bar. isort keeps the support modules imported before the package (`[tool.ruff.lint.isort]` in `pyproject.toml`).
+- `tests/` holds stdlib `unittest` tests, one file per area: `test_agents_*.py` (the agent app; the [agents](../agents/SKILL.md) skill lists them), `test_install.py` (`install.sh` and the library's pin), `test_skills.py` (the skills and this index). `agents_support.py` holds what the app's tests share and puts the checkout and `vendor/` on `sys.path`; `bar_support.py` is the stand-in touch bar; `desktop_support.py` the stand-ins for `lavish-axi`, the URL handler and `systemd-run`. isort keeps the support modules imported before the package (`[tool.ruff.lint.isort]` in `pyproject.toml`).
 - A new test goes in the file of its area; a new area gets its own file, added to the test modules listed under `[[tool.mypy.overrides]]` in `pyproject.toml`.
 
 ## Skills are part of the code
