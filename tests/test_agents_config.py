@@ -50,6 +50,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(c.control, os.path.join(self.code, "bin", "fm-control.sh"))
         self.assertEqual(c.firstmate_poll, 120.0)
         self.assertEqual(c.board, os.path.join(self.code, "bin", "fm-bearings-board.sh"))
+        self.assertEqual(c.inbox, os.path.join(self.code, "bin", "fm-inbox.sh"))
         self.assertEqual(c.lavish, ["lavish-axi"])
         c = load(
             self.write(
@@ -60,6 +61,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(c.lavish, ["/usr/bin/node", "/opt/lavish-axi"])
         _, firstmate = clients(c)
         self.assertEqual((firstmate.board, firstmate.lavish, firstmate.opener), (c.board, c.lavish, ["gio", "open"]))
+        self.assertEqual(firstmate.inbox, c.inbox)
 
     def test_the_clients_interrupt_through_the_configured_control_plane(self):
         c = load(
@@ -114,7 +116,7 @@ class ConfigTests(unittest.TestCase):
     def test_no_default_points_at_a_firstmate_home(self):
         # Without [firstmate] nothing of firstmate is read; its paths have no default.
         c = parse("x", {"herdr": {"session": "default"}})
-        self.assertEqual((c.home, c.bearings, c.control, c.board), (None, None, None, None))
+        self.assertEqual((c.home, c.bearings, c.control, c.board, c.inbox), (None, None, None, None, None))
 
 
 class CommandTests(unittest.TestCase):

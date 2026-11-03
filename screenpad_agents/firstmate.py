@@ -16,7 +16,7 @@ knows the task's harness and checks what it did:
 
   FM_HOME=<home> <code>/bin/fm-control.sh <task id> interrupt
 
-It is the only firstmate command that acts; nothing writes into firstmate.
+It and the board's request below are the only firstmate commands that act.
 
 Tapping Captain's Call opens firstmate's decisions board, the Lavish board
 of /bearings lavish, in the browser on the main screen, where the decisions
@@ -28,7 +28,14 @@ and it is open when Lavish's own session listing (lavish-axi, run with no
 argument) shows that file "open", with its session's URL. That URL, and only
 a loopback http one, is handed to the desktop's URL handler (gio open). With
 no session open nothing is built or armed from here: firstmate composes the
-board, so the panel says to ask it for /bearings lavish.
+board. The panel can ask it to, with one note in firstmate's inbox,
+
+  FM_HOME=<home> <code>/bin/fm-inbox.sh note --json --request-id <id> -- <BOARD_REQUEST>
+
+which wakes firstmate once; it then builds the board, and Lavish opens it.
+The app keeps one request id per request, so a retry after a failure (the
+note perhaps saved, firstmate not woken) replays that note rather than
+queueing a second one.
 """
 
 import json
@@ -36,7 +43,15 @@ import os
 import re
 import subprocess
 
-from .common import BEARINGS_SCHEMA, BOARD_TIMEOUT, CONTROL_TIMEOUT, FIRSTMATE_TIMEOUT, LAVISH_TIMEOUT, OPEN_TIMEOUT
+from .common import (
+    BEARINGS_SCHEMA,
+    BOARD_TIMEOUT,
+    CONTROL_TIMEOUT,
+    FIRSTMATE_TIMEOUT,
+    INBOX_TIMEOUT,
+    LAVISH_TIMEOUT,
+    OPEN_TIMEOUT,
+)
 
 # A task id as fm-control.sh takes it: a bare id, never an option or an
 # endpoint.
@@ -46,6 +61,15 @@ TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 SESSION_ROW = re.compile(r'(?P<status>[^,]*),"(?P<url>[^"]*)"')
 # The board's URL as Lavish serves it: on this machine only.
 BOARD_URL = re.compile(r"http://(127\.0\.0\.1|localhost|\[::1\]):[0-9]{1,5}/[A-Za-z0-9._~/%-]*")
+# The note that asks firstmate for its decisions board, what it asks first
+# (firstmate's wake shows the note's start).
+BOARD_REQUEST = (
+    "Please open the decisions board: /bearings lavish. "
+    "Asked from Captain's Call on the ScreenPad, where no decisions board is open."
+)
+
+# What fm-inbox.sh note --json prints.
+NOTE_SCHEMA = "fm-inbox-note.v1"
 
 
 class FirstmateError(Exception):
@@ -99,11 +123,12 @@ class Firstmate:
         run=subprocess.run,
         timeout=FIRSTMATE_TIMEOUT,
         board=None,
+        inbox=None,
         lavish=("lavish-axi",),
         opener=("gio", "open"),
     ):
         self.home, self.bearings, self.control, self._run, self.timeout = home, bearings, control, run, timeout
-        self.board, self.lavish, self.opener = board, list(lavish), list(opener)
+        self.board, self.inbox, self.lavish, self.opener = board, inbox, list(lavish), list(opener)
 
     def read(self):
         """The Bearings now; FirstmateError when the reader fails."""
@@ -142,6 +167,30 @@ class Firstmate:
         if url is not None:
             self._call(self.opener + [url], "opening the board", OPEN_TIMEOUT, home=False, detach=True)
         return url
+
+    def request_board(self, request_id):
+        """Ask firstmate to build and open its decisions board, with one note
+        in its inbox (one wake) under request_id: what fm-inbox.sh reported,
+        "<outcome> <note id>" ("created", or "replay" for a request_id it
+        already has); None when that note is one firstmate has already
+        handled, acknowledged or moved to handled/ (its replay wakes nothing:
+        ask again under a new id); FirstmateError when it refused or failed."""
+        if not self.inbox or not os.access(self.inbox, os.X_OK):
+            raise FirstmateError("firstmate has no bin/fm-inbox.sh")
+        argv = [self.inbox, "note", "--json", "--request-id", request_id, "--", BOARD_REQUEST]
+        done = self._call(argv, "fm-inbox.sh note", INBOX_TIMEOUT)
+        try:
+            note = json.loads(done.stdout or "")
+        except ValueError:
+            note = None
+        if not isinstance(note, dict) or note.get("schema") != NOTE_SCHEMA:
+            raise FirstmateError("fm-inbox.sh note printed no %s" % NOTE_SCHEMA)
+        path = note.get("path")
+        if note.get("acknowledged") is True or (
+            isinstance(path, str) and os.path.basename(os.path.dirname(path)) == "handled"
+        ):
+            return None
+        return "%s %s" % (note.get("outcome"), note.get("id"))
 
     def _call(self, argv, what, timeout, home=True, detach=False):
         """Run one of firstmate's commands with FM_HOME (or, home False,

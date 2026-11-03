@@ -134,9 +134,10 @@ def fake_bearings(code):
     """A fake firstmate checkout: bin/fm-bearings-snapshot.sh prints the
     model in model.json next to it, and records FM_HOME and its arguments;
     bin/fm-control.sh is fake_control's, bin/fm-bearings-board.sh
-    fake_board's."""
+    fake_board's, bin/fm-inbox.sh fake_inbox's."""
     fake_control(code)
     fake_board(code)
+    fake_inbox(code)
     write_json(os.path.join(code, "bin", "model.json"), bearings_model())
     return write_script(
         os.path.join(code, "bin", "fm-bearings-snapshot.sh"),
@@ -194,6 +195,52 @@ def fake_board(code):
         if sys.argv[1:] != ["path"]:
             sys.exit(2)
         print(os.path.join(os.environ["FM_HOME"], ".lavish", "bearings-board.html"))
+        """,
+    )
+
+
+def fake_inbox(code):
+    """firstmate's bin/fm-inbox.sh in a fake checkout: records FM_HOME and
+    its arguments in inbox.jsonl, next to it, and prints what note --json
+    prints, an fm-inbox-note.v1 object: "created" for a new --request-id,
+    "replay" for one it saw before; for an id listed in inbox.handled the
+    note is in handled/ (drained after its wake), for one in inbox.acked it
+    is acknowledged too. When inbox.fail exists it keeps the request id and
+    exits 3, saved but not announced. It writes into no firstmate home."""
+    os.makedirs(os.path.join(code, "bin"), exist_ok=True)
+    return write_script(
+        os.path.join(code, "bin", "fm-inbox.sh"),
+        """
+        import json, os, sys
+        here = os.path.dirname(os.path.abspath(__file__))
+        fm = sorted(k for k in os.environ if k.startswith("FM_"))
+        with open(os.path.join(here, "inbox.jsonl"), "a") as f:
+            f.write(json.dumps({"FM_HOME": os.environ.get("FM_HOME"), "fm": fm, "args": sys.argv[1:]}) + "\\n")
+        def listed(name):
+            p = os.path.join(here, name)
+            return open(p).read().split() if os.path.exists(p) else []
+        args = sys.argv[1:]
+        rid = args[args.index("--request-id") + 1] if "--request-id" in args else None
+        ids = listed("inbox.ids")
+        if rid is not None and rid not in ids:
+            with open(os.path.join(here, "inbox.ids"), "a") as f:
+                f.write(rid + "\\n")
+        fail = os.path.exists(os.path.join(here, "inbox.fail"))
+        inbox = os.path.join(os.environ["FM_HOME"], "state", "inbox")
+        handled = rid in listed("inbox.handled") or rid in listed("inbox.acked")
+        print(json.dumps({
+            "schema": "fm-inbox-note.v1",
+            "outcome": "replay" if rid in ids else "created",
+            "id": "1793706159-abc123",
+            "request_id": rid,
+            "saved": True,
+            "announced": not fail,
+            "acknowledged": rid in listed("inbox.acked"),
+            "path": os.path.join(inbox, "handled" if handled else "", "1793706159-abc123.note"),
+        }))
+        if fail:
+            print("fm-inbox: saved, but firstmate was not woken", file=sys.stderr)
+            sys.exit(3)
         """,
     )
 
@@ -334,7 +381,10 @@ class FakeHerdr:
 class FakeFirstmate:
     """firstmate's client for the loop. board is the URL of the board
     Lavish has open (None: none open); open_board records each URL it
-    opened, after waiting for release when the test sets it."""
+    opened, after waiting for release when the test sets it; request_board
+    records the request id of each request in request_ids, failing with
+    request_error when it is set, and returns None (fm-inbox.sh's
+    acknowledged replay) for an id in acknowledged."""
 
     BOARD = "http://127.0.0.1:4387/session/b0a2d"
 
@@ -349,6 +399,9 @@ class FakeFirstmate:
         self.board_calls = 0
         self.opened = []
         self.release = None
+        self.request_ids = []
+        self.acknowledged = set()
+        self.request_error = None
 
     def open_board(self):
         self.board_calls += 1
@@ -359,6 +412,18 @@ class FakeFirstmate:
         if self.board is not None:
             self.opened.append(self.board)
         return self.board
+
+    @property
+    def requests(self):
+        return len(self.request_ids)
+
+    def request_board(self, request_id):
+        self.request_ids.append(request_id)
+        if self.request_error:
+            raise FirstmateError(self.request_error)
+        if request_id in self.acknowledged:
+            return None
+        return "created 1793706159-abc123"
 
     def interrupt(self, task_id):
         self.interrupted.append(task_id)
