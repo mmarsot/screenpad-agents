@@ -1,0 +1,7 @@
+__pycache__/
+.claude/*
+!.claude/skills
+.venv/
+.ruff_cache/
+.mypy_cache/
+vendor/

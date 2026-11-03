@@ -1,0 +1,79 @@
+# screenpad-agents is a Python 3 program using only the standard library and
+# the touch bar's client library; install.sh copies it, and nothing here is
+# installed with it. This file names that library and the development tools.
+#
+# The client library screenpad_app comes from screenpad-linux's git URL,
+# pinned to a commit (screenpad-linux's docs/app-api.md#the-python-client-library).
+# install.sh and 'make vendor' read it from here and put it in vendor/ next to
+# the program, since the program runs in isolated mode (python3 -I).
+[project]
+name = "screenpad-agents"
+version = "0.0.0"
+description = "Agent-control app for the ScreenPad touch bar (screenpad-linux): Herdr agents, firstmate tasks and decisions"
+requires-python = ">=3.11"
+dependencies = [
+    "screenpad-app @ git+https://github.com/mmarsot/screenpad-linux@695bf2c5e20bcd0ccf37daaa52617b27c819082d",
+]
+
+# uv never builds or installs the program (package = false): the dev group is
+# the tooling.
+[dependency-groups]
+dev = ["mypy==2.4.1", "ruff==0.17.3"]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+# Python files only; the docs keep their snippets as written. vendor/ is
+# git-ignored, so ruff skips it.
+include = ["*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "I", "RUF"]
+ignore = [
+    "UP031", # %-formatting is the house style
+    "RUF005", # [*a, b] is not clearer than a + [b]
+    "B904", # errors are turned into one-line messages on purpose
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The tests import the program after putting the checkout on sys.path.
+"tests/*" = ["E402"]
+
+[tool.ruff.lint.isort]
+# The tests' support modules put the checkout on sys.path, so they are
+# imported before the program's package.
+section-order = ["future", "standard-library", "third-party", "test-support", "first-party", "local-folder"]
+known-first-party = ["screenpad_agents"]
+known-third-party = ["screenpad_app"]
+
+[tool.ruff.lint.isort.sections]
+test-support = ["agents_support", "bar_support"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["agents.py", "screenpad_agents", "tests"]
+mypy_path = ["$MYPY_CONFIG_FILE_DIR", "$MYPY_CONFIG_FILE_DIR/tests", "$MYPY_CONFIG_FILE_DIR/vendor"]
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# In tests a missing regex match failing the test is the point, and fakes
+# record calls in plain lists; the rest is checked as in the program.
+[[tool.mypy.overrides]]
+module = [
+    "agents_support",
+    "bar_support",
+    "test_agents_answers",
+    "test_agents_app",
+    "test_agents_board",
+    "test_agents_card",
+    "test_agents_config",
+    "test_agents_fleet",
+    "test_agents_sources",
+    "test_install",
+    "test_skills",
+]
+disable_error_code = ["func-returns-value", "union-attr", "var-annotated"]
