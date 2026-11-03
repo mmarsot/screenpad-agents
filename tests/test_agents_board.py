@@ -148,11 +148,11 @@ class BoardTests(unittest.TestCase):
 
     def test_the_board_is_asked_for_with_one_inbox_note(self):
         with mock.patch.dict(os.environ, {"FM_HOME": "/home/me/firstmate", "FM_BACKEND": "herdr"}):
-            self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "queued 1793706159-abc123")
+            self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "created 1793706159-abc123")
         # One note on the configured home only, under its request id, its
         # text after --, and nothing else: no board built, no Lavish, no opener.
         calls = read_calls(os.path.join(self.code, "bin", "inbox.jsonl"))
-        args = ["note", "--request-id", "screenpad-board-1-ab", "--", BOARD_REQUEST]
+        args = ["note", "--json", "--request-id", "screenpad-board-1-ab", "--", BOARD_REQUEST]
         self.assertEqual(calls, [{"FM_HOME": self.home, "fm": ["FM_HOME"], "args": args}])
         self.assertIn("/bearings lavish", BOARD_REQUEST)
         self.assertEqual(read_calls(os.path.join(self.code, "bin", "board.jsonl")), [])
@@ -166,16 +166,27 @@ class BoardTests(unittest.TestCase):
         # The same request id again is fm-inbox.sh's replay, not a new note.
         os.remove(fail)
         self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "replay 1793706159-abc123")
-        # Once firstmate has handled it, a replay wakes nothing: it is told
-        # apart (None), so the app asks again under a new id.
-        with open(os.path.join(self.code, "bin", "inbox.handled"), "w") as f:
-            f.write("screenpad-board-1-ab\n")
-        self.assertIsNone(self.fm.request_board("screenpad-board-1-ab"))
+        # Once firstmate has drained it (the note in handled/, announced but
+        # not acknowledged) or acknowledged it, a replay wakes nothing: it is
+        # told apart (None), so the app asks again under a new id.
+        for listing in ("inbox.handled", "inbox.acked"):
+            with open(os.path.join(self.code, "bin", listing), "w") as f:
+                f.write("screenpad-board-1-ab\n")
+            self.assertIsNone(self.fm.request_board("screenpad-board-1-ab"))
+            os.remove(os.path.join(self.code, "bin", listing))
+        self.assertEqual(self.fm.request_board("screenpad-board-1-ab"), "replay 1793706159-abc123")
         os.remove(os.path.join(self.code, "bin", "fm-inbox.sh"))
         with self.assertRaisesRegex(FirstmateError, "firstmate has no bin/fm-inbox.sh"):
             self.fm.request_board("screenpad-board-1-ab")
         with self.assertRaisesRegex(FirstmateError, "firstmate has no bin/fm-inbox.sh"):
             Firstmate(self.home, "r", "c").request_board("screenpad-board-1-ab")
+
+    def test_a_note_answer_that_is_not_one_is_refused(self):
+        for out in ("", "queued 1793706159-abc123\n", '{"schema": "other"}\n', "[]\n"):
+            done = subprocess.CompletedProcess([], 0, out, "")
+            fm = Firstmate(self.home, "r", "c", run=lambda *a, done=done, **k: done, inbox=self.fm.inbox)
+            with self.assertRaisesRegex(FirstmateError, "fm-inbox.sh note printed no fm-inbox-note.v1"):
+                fm.request_board("screenpad-board-1-ab")
 
     def test_a_board_path_that_is_not_one_is_refused(self):
         for out in ("", "relative/board.html\n", "/a\n/b\n"):
@@ -263,7 +274,7 @@ class BoardTapTests(unittest.TestCase):
         rig.apps.asks.choose(self.no_board_card(rig), 0)
         rig.until(lambda: self.asked(rig) == [REQUESTED_CARD])
         self.assertEqual(self.firstmate.requests, 1)
-        self.assertIn("asked firstmate for the decisions board: queued 1793706159-abc123", rig.logged)
+        self.assertIn("asked firstmate for the decisions board: created 1793706159-abc123", rig.logged)
         # While it is pending, a tap on Captain's Call still looks for the
         # board, and says it was requested; nothing asks firstmate again.
         calls = self.firstmate.board_calls
@@ -334,7 +345,7 @@ class BoardTapTests(unittest.TestCase):
         self.assertEqual(len(ids), 3)
         self.assertNotEqual(ids[2], first)
         self.assertEqual(rig.app._request_id, ids[2])
-        self.assertIn("asked firstmate for the decisions board: queued 1793706159-abc123", rig.logged)
+        self.assertIn("asked firstmate for the decisions board: created 1793706159-abc123", rig.logged)
 
     def test_a_failed_request_older_than_the_hold_is_asked_anew(self):
         rig = self.rig()

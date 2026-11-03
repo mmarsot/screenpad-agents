@@ -30,7 +30,7 @@ a loopback http one, is handed to the desktop's URL handler (gio open). With
 no session open nothing is built or armed from here: firstmate composes the
 board. The panel can ask it to, with one note in firstmate's inbox,
 
-  FM_HOME=<home> <code>/bin/fm-inbox.sh note --request-id <id> -- <BOARD_REQUEST>
+  FM_HOME=<home> <code>/bin/fm-inbox.sh note --json --request-id <id> -- <BOARD_REQUEST>
 
 which wakes firstmate once; it then builds the board, and Lavish opens it.
 The app keeps one request id per request, so a retry after a failure (the
@@ -68,8 +68,8 @@ BOARD_REQUEST = (
     "Asked from Captain's Call on the ScreenPad, where no decisions board is open."
 )
 
-# The line fm-inbox.sh note adds to a replay of a note firstmate has handled.
-ACKNOWLEDGED = "firstmate has already acknowledged this note."
+# What fm-inbox.sh note --json prints.
+NOTE_SCHEMA = "fm-inbox-note.v1"
 
 
 class FirstmateError(Exception):
@@ -171,18 +171,26 @@ class Firstmate:
     def request_board(self, request_id):
         """Ask firstmate to build and open its decisions board, with one note
         in its inbox (one wake) under request_id: what fm-inbox.sh reported,
-        "queued <id>", or "replay <id>" for a request_id it already has; None
-        when that note was one firstmate has already acknowledged (its replay
-        wakes nothing: ask again under a new id); FirstmateError when it
-        refused or failed."""
+        "<outcome> <note id>" ("created", or "replay" for a request_id it
+        already has); None when that note is one firstmate has already
+        handled, acknowledged or moved to handled/ (its replay wakes nothing:
+        ask again under a new id); FirstmateError when it refused or failed."""
         if not self.inbox or not os.access(self.inbox, os.X_OK):
             raise FirstmateError("firstmate has no bin/fm-inbox.sh")
-        argv = [self.inbox, "note", "--request-id", request_id, "--", BOARD_REQUEST]
+        argv = [self.inbox, "note", "--json", "--request-id", request_id, "--", BOARD_REQUEST]
         done = self._call(argv, "fm-inbox.sh note", INBOX_TIMEOUT)
-        out = [line.strip() for line in (done.stdout or "").strip().splitlines()]
-        if ACKNOWLEDGED in out:
+        try:
+            note = json.loads(done.stdout or "")
+        except ValueError:
+            note = None
+        if not isinstance(note, dict) or note.get("schema") != NOTE_SCHEMA:
+            raise FirstmateError("fm-inbox.sh note printed no %s" % NOTE_SCHEMA)
+        path = note.get("path")
+        if note.get("acknowledged") is True or (
+            isinstance(path, str) and os.path.basename(os.path.dirname(path)) == "handled"
+        ):
             return None
-        return out[0] if out else "queued"
+        return "%s %s" % (note.get("outcome"), note.get("id"))
 
     def _call(self, argv, what, timeout, home=True, detach=False):
         """Run one of firstmate's commands with FM_HOME (or, home False,

@@ -201,11 +201,12 @@ def fake_board(code):
 
 def fake_inbox(code):
     """firstmate's bin/fm-inbox.sh in a fake checkout: records FM_HOME and
-    its arguments in inbox.jsonl, next to it, and prints what note prints:
-    "replay <id>" for a --request-id it saw before, and that firstmate has
-    already acknowledged it when the id is listed in inbox.handled; fails
-    when inbox.fail exists, after keeping the request id (as a saved note
-    whose wake failed). It writes into no firstmate home."""
+    its arguments in inbox.jsonl, next to it, and prints what note --json
+    prints, an fm-inbox-note.v1 object: "created" for a new --request-id,
+    "replay" for one it saw before; for an id listed in inbox.handled the
+    note is in handled/ (drained after its wake), for one in inbox.acked it
+    is acknowledged too. When inbox.fail exists it keeps the request id and
+    exits 3, saved but not announced. It writes into no firstmate home."""
     os.makedirs(os.path.join(code, "bin"), exist_ok=True)
     return write_script(
         os.path.join(code, "bin", "fm-inbox.sh"),
@@ -215,25 +216,31 @@ def fake_inbox(code):
         fm = sorted(k for k in os.environ if k.startswith("FM_"))
         with open(os.path.join(here, "inbox.jsonl"), "a") as f:
             f.write(json.dumps({"FM_HOME": os.environ.get("FM_HOME"), "fm": fm, "args": sys.argv[1:]}) + "\\n")
+        def listed(name):
+            p = os.path.join(here, name)
+            return open(p).read().split() if os.path.exists(p) else []
         args = sys.argv[1:]
         rid = args[args.index("--request-id") + 1] if "--request-id" in args else None
-        seen = os.path.join(here, "inbox.ids")
-        ids = open(seen).read().split() if os.path.exists(seen) else []
+        ids = listed("inbox.ids")
         if rid is not None and rid not in ids:
-            with open(seen, "a") as f:
+            with open(os.path.join(here, "inbox.ids"), "a") as f:
                 f.write(rid + "\\n")
-        if os.path.exists(os.path.join(here, "inbox.fail")):
+        fail = os.path.exists(os.path.join(here, "inbox.fail"))
+        inbox = os.path.join(os.environ["FM_HOME"], "state", "inbox")
+        handled = rid in listed("inbox.handled") or rid in listed("inbox.acked")
+        print(json.dumps({
+            "schema": "fm-inbox-note.v1",
+            "outcome": "replay" if rid in ids else "created",
+            "id": "1793706159-abc123",
+            "request_id": rid,
+            "saved": True,
+            "announced": not fail,
+            "acknowledged": rid in listed("inbox.acked"),
+            "path": os.path.join(inbox, "handled" if handled else "", "1793706159-abc123.note"),
+        }))
+        if fail:
             print("fm-inbox: saved, but firstmate was not woken", file=sys.stderr)
-            sys.exit(1)
-        if rid in ids:
-            print("replay 1793706159-abc123")
-            handled = os.path.join(here, "inbox.handled")
-            if os.path.exists(handled) and rid in open(handled).read().split():
-                print("  firstmate has already acknowledged this note.")
-            sys.exit(0)
-        print("queued 1793706159-abc123")
-        print("  " + sys.argv[-1])
-        print("  firstmate will pick this up at its next check.")
+            sys.exit(3)
         """,
     )
 
@@ -416,7 +423,7 @@ class FakeFirstmate:
             raise FirstmateError(self.request_error)
         if request_id in self.acknowledged:
             return None
-        return "queued 1793706159-abc123"
+        return "created 1793706159-abc123"
 
     def interrupt(self, task_id):
         self.interrupted.append(task_id)
