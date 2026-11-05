@@ -62,8 +62,14 @@ def first(bearings, can_open):
     return None
 
 
+HEAD_CHARS = 7
+
+
 def key(review):
-    return (review.task, review.head)
+    """The round of review: the task and the head it is ready at, by its
+    first characters, so the same change named by a decision (a short
+    head), a pull request (a full one) or a run (its own) is one round."""
+    return (review.task, review.head[:HEAD_CHARS].lower() if review.head else None)
 
 
 def token(review):
@@ -75,7 +81,7 @@ def request_id(review, verdict):
     """The id of the note for this verdict on this change: the same every
     time, so the second press (or one after a restart) replays the note
     instead of sending another."""
-    digest = hashlib.sha256(("%s@%s/%s" % (review.task, review.head, verdict)).encode()).hexdigest()
+    digest = hashlib.sha256(("%s@%s/%s" % (*key(review), verdict)).encode()).hexdigest()
     return "screenpad-review-%s-%s" % (verdict, digest[:24])
 
 

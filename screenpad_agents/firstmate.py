@@ -15,6 +15,11 @@ the reader is asked for "endpoints,paths": "paths" gives each live task's
 worktree, the repo copy its no-mistakes runs are made in. The reader takes about 3 s; app.py runs it off the
 loop, at most once a minute plus on demand.
 
+A captain contribution of kind "pr" (a task, a commit head, a pull request's
+URL on the forge) is a change ready for review as well as a decision keyed
+code-review is, and the two of one task are one change (_join_pull_requests):
+the review buttons of Captain's Call and of a run's card (reviewcall.py).
+
 Interrupting a task's agent goes through firstmate's control plane, which
 knows the task's harness and checks what it did:
 
@@ -68,6 +73,7 @@ from .common import (
     INBOX_TIMEOUT,
     LAVISH_TIMEOUT,
     TASK_PLACEHOLDER,
+    pr_url,
 )
 from .desktop import OPENER, SCOPE, DesktopError, launch, open_url
 
@@ -90,10 +96,17 @@ BOARD_REQUEST = (
 # line "needs-decision [key=code-review]: ready for review at <head> ..."):
 # its id is the task, its summary names the head the task is ready at.
 REVIEW_KEY = "code-review"
+HEAD = re.compile(r"[0-9a-f]{7,64}", re.IGNORECASE)
 REVIEW_HEAD = re.compile(r"ready for review at ([0-9a-f]{7,64})\b", re.IGNORECASE)
+# A captain contribution of this kind is a pull request that waits for the
+# captain's merge approval; it is a change ready for review as well, named by
+# its task, its head and its URL on the forge.
+PR_KIND = "pr"
 # The notes Approve and Request changes send to firstmate: what the captain
-# decided, about which task (and, for an approval, at which head).
+# decided, about which task (and, for an approval, at which head, and which
+# pull request it approves merging, when the change is one).
 APPROVE_NOTE = "Captain approves the change for task %s (ready head %s)."
+APPROVE_PR_NOTE = "Captain approves the change for task %s (ready head %s) and approves merging %s."
 CHANGES_NOTE = "Captain requests changes on task %s; review comments follow from the review window."
 
 # What fm-inbox.sh note --json and receipts print.
@@ -127,21 +140,22 @@ class Review:
     """A change ready for review: its task and the head it is ready at (None
     when the call does not say: then it can be reviewed, but no verdict is
     sent for it, since nothing would tell one round of review from the
-    next)."""
+    next), and its pull request on the forge (a URL pr_url accepts) when it
+    is one, which an approval names."""
 
-    __slots__ = ("head", "task")
+    __slots__ = ("head", "pr", "task")
 
-    def __init__(self, task, head=None):
-        self.task, self.head = task, head
+    def __init__(self, task, head=None, pr=None):
+        self.task, self.head, self.pr = task, head, pr
 
     def __eq__(self, other):
-        return isinstance(other, Review) and (self.task, self.head) == (other.task, other.head)
+        return isinstance(other, Review) and (self.task, self.head, self.pr) == (other.task, other.head, other.pr)
 
     def __hash__(self):
-        return hash((self.task, self.head))
+        return hash((self.task, self.head, self.pr))
 
     def __repr__(self):
-        return "Review(%r, %r)" % (self.task, self.head)
+        return "Review(%r, %r%s)" % (self.task, self.head, ", %r" % self.pr if self.pr else "")
 
 
 class Call:
@@ -281,8 +295,12 @@ class Firstmate:
             raise FirstmateError("not a firstmate task id: %r" % (review.task,))
         if not review.head:
             raise FirstmateError("not a change at a named head: task %s" % review.task)
+        if review.pr is not None and pr_url(review.pr) is None:
+            raise FirstmateError("not a pull request on the forge: %r" % (review.pr,))
         if verdict == "approve":
             text = APPROVE_NOTE % (review.task, review.head)
+            if review.pr:
+                text = APPROVE_PR_NOTE % (review.task, review.head, review.pr)
         elif verdict == "changes":
             text = CHANGES_NOTE % review.task
         else:
@@ -392,6 +410,7 @@ def parse(model):
             if os.path.isabs(p["worktree"]):
                 worktrees[p["id"]] = p["worktree"]
     waiting = [c for c in map(_decision, decisions) if c] + [c for c in map(_contribution, captain) if c]
+    _join_pull_requests(waiting)
     return Bearings(len(decisions) + len(captain), more, tasks, worktrees, waiting)
 
 
@@ -419,7 +438,35 @@ def _contribution(c):
     about = _text(c.get("reason")) or _text(c.get("url"))
     kind = _text(c.get("kind"))
     text = "%s: %s" % (kind, about) if kind and about else about or kind
-    return Call("contribution", _text(c.get("task")), text)
+    review, task, url = None, _text(c.get("task")), pr_url(_text(c.get("url")))
+    if kind == PR_KIND and url and TASK_ID.fullmatch(task):
+        head = _text(c.get("head"))
+        review = Review(task, head if head and HEAD.fullmatch(head) else None, url)
+    return Call("contribution", task, text, review)
+
+
+def _join_pull_requests(calls):
+    """A task's change ready for review (a decision) and its pull request
+    waiting for the captain (a contribution) are one change: the decision
+    takes the pull request's URL (and its head when it names none) and the
+    contribution is a plain call. They are one when their heads agree (one
+    starts the other) or the decision names none."""
+    for call in calls:
+        if call.kind != "decision" or call.review is None or call.review.pr:
+            continue
+        for other in calls:
+            if other.kind != "contribution" or other.review is None or other.review.task != call.review.task:
+                continue
+            mine, theirs = call.review.head, other.review.head
+            if (
+                mine
+                and theirs
+                and not (mine.lower().startswith(theirs.lower()) or theirs.lower().startswith(mine.lower()))
+            ):
+                continue
+            call.review = Review(call.review.task, mine or theirs, other.review.pr)
+            other.review = None
+            break
 
 
 def listed_url(listing, path):

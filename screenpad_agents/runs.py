@@ -11,6 +11,13 @@ and to the firstmate task whose worktree it is. More than one active run
 for one agent, one repo copy or one branch is the warning: its project's
 widget turns red. Tapping a run opens its card (runcard.py) in place of the
 grid. Nothing here acts on a run.
+
+A run whose pull request is ready for the captain (its newest run of the
+branch, ended without failing, with a pull request on the forge, and joined
+to a firstmate task) is a change ready for review: its card gets the same
+Review, Approve and Request changes buttons as Captain's Call (View.review,
+reviewcall.py), and Watch, which opens a live view of the run, when [runs]
+watch_command is set.
 """
 
 import hashlib
@@ -22,11 +29,14 @@ from screenpad_app.common import MAX_BADGE, MAX_LABEL, MAX_ROWS, MAX_TEXT, MAX_T
 
 from . import runcard
 from .common import LIGHTHOUSE, RUNS_PAGE, RUNS_TILE, icon
+from .firstmate import HEAD, Review
 from .nomistakes import pr_url
 
 COLUMNS = 5
 MIN_ROWS = 2
 RUN_CELLS = COLUMNS - 1
+# A run that ended without failing, its pull request waiting for the captain.
+READY = ("completed", "checks_passed", "passed")
 
 
 class Project:
@@ -95,13 +105,13 @@ class View:
     copies of its branch, its agent's pane and its task, and whether it
     needs you or is one of several active runs for one agent, copy or branch."""
 
-    __slots__ = ("attention", "copies", "detail", "duplicate", "pane", "project", "run", "task")
+    __slots__ = ("attention", "copies", "detail", "duplicate", "newest", "pane", "project", "run", "task")
 
     def __init__(self, run, project, detail):
         self.run, self.project, self.detail = run, project, detail
         self.copies: list = []
         self.pane = self.task = None
-        self.attention = self.duplicate = False
+        self.attention = self.duplicate = self.newest = False
 
     def name(self):
         return self.task or self.run.branch
@@ -130,6 +140,16 @@ class View:
         detail = detail or self.detail
         return pr_url(detail.pr if detail is not None and detail.pr else self.run.pr)
 
+    def review(self):
+        """The change this run leaves ready for review: its task, its head
+        and its pull request; None unless it is the newest run of its
+        branch, ended without failing, with a pull request on the forge, in
+        a task's copy."""
+        run, url = self.run, self.pr_url()
+        if self.task is None or not self.newest or run.status not in READY or url is None:
+            return None
+        return Review(self.task, run.head if run.head and HEAD.fullmatch(run.head) else None, url)
+
     def tone(self):
         if self.attention:
             return "reject" if self.run.status == "failed" else "warning"
@@ -145,7 +165,8 @@ class Runs:
     """What the Runs page last knew: the Scan (or why there is none), and
     the run whose card is open."""
 
-    def __init__(self):
+    def __init__(self, watch=False):
+        self.watch = watch  # [runs] watch_command is set: cards get Watch
         self.scan = None
         self.error = None
         self.card = None
@@ -184,7 +205,7 @@ class Runs:
                 v.copies = [c for c in copies if c[3:] == (p.repo, r.branch)]
                 v.pane = next((c[1] for c in v.copies if c[1]), None)
                 v.task = next((c[2] for c in v.copies if c[2]), None)
-                first = r.branch not in newest
+                first = v.newest = r.branch not in newest
                 newest.add(r.branch)
                 v.attention = r.active and v.detail is not None and v.detail.waiting
                 v.attention = v.attention or (first and r.status == "failed")
@@ -276,6 +297,27 @@ class Runs:
         card = self.card
         return view.pr_url(card.detail if card is not None and card.run_id == run_id else None)
 
+    def card_review(self, fleet):
+        """The change ready for review the open card's run leaves, if any."""
+        view = self._view(fleet, self.card.run_id) if self.card is not None else None
+        return view.review() if view is not None else None
+
+    def pane_review(self, fleet, pane):
+        """The change ready for review that a run of the agent in pane
+        leaves, if any: what focusing that agent opens instead of its
+        terminal once it is done."""
+        for vs in self.views(fleet).values():
+            for v in vs:
+                if v.pane == pane and v.review() is not None:
+                    return v.review()
+        return None
+
+    def set_launched(self, run_id, error=None):
+        """The watch command of the open card's run started or failed;
+        ignored for any other run."""
+        if self.card is not None and self.card.run_id == run_id:
+            self.card.watch_ended(error)
+
     def card_pane(self, fleet):
         """The pane of the agent of the open card's run, if any."""
         if self.card is None:
@@ -333,7 +375,8 @@ class Runs:
         if card is not None and found is not None:
             self._runs = {}
             view = next(v for v in views[found[0].repo] if v.run.id == card.run_id)
-            widgets, columns, rows = card.widgets(view), runcard.COLUMNS, runcard.ROWS
+            widgets = card.widgets(view, self._review_of(fleet, view), self.watch)
+            columns, rows = runcard.COLUMNS, runcard.ROWS
         else:
             widgets, rows = self._grid(views)
             columns = COLUMNS
@@ -343,6 +386,13 @@ class Runs:
         if attention:
             msg["badge"] = clip(str(attention), MAX_BADGE)
         return msg
+
+    def _review_of(self, fleet, view):
+        """(review, its entry, can_open) for the card's buttons, or None."""
+        review, reviews = view.review(), getattr(fleet, "reviews", None)
+        if review is None or reviews is None or not (reviews.can_open or review.head):
+            return None
+        return review, reviews.entry(review), reviews.can_open
 
     def _grid(self, views):
         self._runs = {}

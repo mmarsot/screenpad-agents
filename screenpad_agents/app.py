@@ -42,7 +42,7 @@ import time
 
 from screenpad_app import Link
 
-from . import callpage
+from . import callpage, reviewcall
 from . import card as cards
 from .boardrequest import BoardRequest
 from .common import (
@@ -66,7 +66,16 @@ from .screen import guarded_send, read_screen
 
 class App:
     def __init__(
-        self, config, herdr, firstmate, socket_path, log=None, clock=time.monotonic, nomistakes=None, opener=None
+        self,
+        config,
+        herdr,
+        firstmate,
+        socket_path,
+        log=None,
+        clock=time.monotonic,
+        nomistakes=None,
+        opener=None,
+        launcher=None,
     ):
         self.config, self.herdr, self.firstmate = config, herdr, firstmate
         self.socket_path, self.clock = socket_path, clock
@@ -75,6 +84,7 @@ class App:
         self.runs = None
         if config.runs is not None and nomistakes is not None:
             opens = {"opener": opener} if opener is not None else {}
+            opens.update({"launcher": launcher} if launcher is not None else {})
             self.runs = RunsWatch(config.runs, nomistakes, config.home, self._post, clock, **opens)
         self.stopping = threading.Event()
         self._results: queue.Queue = queue.Queue()
@@ -253,16 +263,20 @@ class App:
             value, error = rest
             self.fleet.set_bearings(value, error)
             if value is not None and not error:
-                self.reviews.bearings(value)
+                shown = self.runs.board.card_review(self.fleet) if self.runs is not None else None
+                self.reviews.bearings(value, [reviewcall.key(shown)] if shown is not None else ())
             self._tell("firstmate", error)
             if self.runs is not None:
                 self.runs.update(self.fleet)
-        elif what in ("runs", "run", "opened"):
+        elif what in ("runs", "run", "opened", "launched"):
             if what == "runs":
                 self._tell("no-mistakes", rest[1])
             elif what == "opened":
                 _, url, error = rest
                 self.log("PR %s not opened: %s" % (url, error) if error else "opened PR %s" % url)
+            elif what == "launched":
+                _, error = rest
+                self.log("the watch view did not open: %s" % error if error else "opened the watch view")
             return self.runs is not None and self.runs.result(what, *rest)
         elif what == "screen":
             self.fleet.set_screen(rest[0])
@@ -332,6 +346,9 @@ class App:
         elif op == "event" and msg.get("page") == PAGE and msg.get("type") in ("tap", "long"):
             self._touch(msg.get("widget"), msg["type"])
         elif op == "event" and msg.get("page") == RUNS_PAGE and self.runs is not None:
+            if msg.get("type") == "tap" and self._run_review_tap(msg.get("widget")):
+                self._dirty = True
+                return
             changed, pane = self.runs.touch(msg.get("widget"), msg.get("type"), self.fleet)
             self._dirty = self._dirty or changed
             self._focus_pane(pane)
@@ -371,6 +388,13 @@ class App:
         board = self.board.choose(widget)
         return self.reviews.choose(widget, self.fleet.bearings) or board
 
+    def _run_review_tap(self, widget):
+        """A tap on a button of the open run's change ready for review (the
+        card shows the same buttons as Captain's Call); True if it was one
+        and the page changed."""
+        review = self.runs.board.card_review(self.fleet) if self.runs is not None else None
+        return review is not None and self.reviews.act(widget, review)
+
     def _card_touch(self, card, widget, touch):
         agent = self.fleet.agent_of(card.pane)
         chosen = card.answer_for(agent, widget, touch)
@@ -403,15 +427,19 @@ class App:
 
     def _focus_pane(self, pane):
         """Focus pane's terminal in Herdr, unless its agent is done (idle or
-        done) and its task is ready for review with a review command
-        configured: then the review opens instead (a terminal of little use
-        to the reviewer). A blocked agent always gets its terminal."""
+        done) and its task is ready for review (a decision, a pull request
+        waiting for the captain, or a run's ready pull request) with a
+        review command configured: then the review opens instead (a
+        terminal of little use to the reviewer). A blocked agent always
+        gets its terminal."""
         if pane is None:
             return
         agent = self.fleet.agent_of(pane)
         review = None
         if agent is not None and agent.state in ("idle", "done"):
             review = self.reviews.ready(self.fleet.task_of(pane), self.fleet.bearings)
+            if review is None and self.runs is not None and self.reviews.can_open:
+                review = self.runs.board.pane_review(self.fleet, pane)
         if review is None:
             self._jobs.put(("focus", pane))
         elif self.reviews.open(review):

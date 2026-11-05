@@ -30,6 +30,10 @@ ConfigError naming it.
   command = "no-mistakes"      # or a list: a wrapper and its arguments
   poll = 20                    # seconds between reads while a run is active
   idle = 120                   # seconds between reads while none is
+  watch_command = "/path/to/watch {run}"
+                               # optional, or a list: opens a live view of a
+                               # run ({run} is the run id), for its card's
+                               # Watch button
 """
 
 import os
@@ -42,6 +46,7 @@ from .common import (
     FIRSTMATE_POLL_RANGE,
     HERDR_POLL,
     HERDR_POLL_RANGE,
+    RUN_PLACEHOLDER,
     RUNS_IDLE,
     RUNS_IDLE_RANGE,
     RUNS_POLL,
@@ -92,13 +97,14 @@ class Config:
 class Runs:
     """[runs]: the repo directories to watch, whether firstmate's projects
     and task copies are watched too, no-mistakes' command and the two
-    intervals."""
+    intervals, and the command that opens a live view of a run (watch,
+    with its {run} word; None: no Watch button)."""
 
-    __slots__ = ("command", "firstmate", "idle", "poll", "repos")
+    __slots__ = ("command", "firstmate", "idle", "poll", "repos", "watch")
 
-    def __init__(self, repos=(), firstmate=False, command=("no-mistakes",), poll=RUNS_POLL, idle=RUNS_IDLE):
+    def __init__(self, repos=(), firstmate=False, command=("no-mistakes",), poll=RUNS_POLL, idle=RUNS_IDLE, watch=None):
         self.repos, self.firstmate, self.command = list(repos), firstmate, list(command)
-        self.poll, self.idle = poll, idle
+        self.poll, self.idle, self.watch = poll, idle, list(watch) if watch else None
 
 
 def load(path):
@@ -157,7 +163,7 @@ def _review(path, value):
 
 
 def _runs(path, table, firstmate):
-    _known(path, table, {"repos", "firstmate", "command", "poll", "idle"}, "key in [runs]")
+    _known(path, table, {"repos", "firstmate", "command", "poll", "idle", "watch_command"}, "key in [runs]")
     repos = table.get("repos", [])
     if not isinstance(repos, list) or not all(isinstance(r, str) and os.path.isabs(r) for r in repos):
         raise ConfigError("%s: [runs] repos must be a list of absolute paths" % path)
@@ -175,7 +181,12 @@ def _runs(path, table, firstmate):
     idle = _seconds(path, table, "runs", RUNS_IDLE, RUNS_IDLE_RANGE, key="idle")
     if idle < poll:
         raise ConfigError("%s: [runs] idle must be at least its poll" % path)
-    return Runs(list(dict.fromkeys(os.path.normpath(r) for r in repos)), discover, command, poll, idle)
+    watch = None
+    if "watch_command" in table:
+        watch = _command(path, table["watch_command"], "[runs] watch_command", "/path/to/watch")
+        if not any(RUN_PLACEHOLDER in word for word in watch):
+            raise ConfigError("%s: [runs] watch_command must hold {run}, where the run id goes" % path)
+    return Runs(list(dict.fromkeys(os.path.normpath(r) for r in repos)), discover, command, poll, idle, watch)
 
 
 def _known(path, table, allowed, what):

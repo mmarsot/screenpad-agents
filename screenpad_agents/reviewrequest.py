@@ -48,9 +48,11 @@ class Reviews:
     def choose(self, widget, bearings):
         """A tap on the page's widget; True if the page changed."""
         call = reviewcall.first(bearings, self.can_open)
-        if call is None:
-            return False
-        review = call.review
+        return self.act(widget, call.review) if call is not None else False
+
+    def act(self, widget, review):
+        """A tap on widget, one of review's buttons (Captain's Call's, or a
+        run's card's); True if the page changed."""
         what = reviewcall.action(widget, review, self.entry(review), self.can_open)
         changed = False
         if what in (OPEN, CHANGES):
@@ -62,8 +64,9 @@ class Reviews:
     def ready(self, task, bearings):
         """The Review of task's change when it waits for review and a review
         command is configured, else None: the agent's terminal is focused
-        as before. A task whose ready work is a pull request, with no
-        code-review decision, is not one."""
+        as before. A task's change is one by a code-review decision, or by
+        a pull request waiting for the captain (firstmate.PR_KIND); the
+        Runs page names the ones its runs leave (runs.View.review)."""
         if task is None or bearings is None or not self.can_open:
             return None
         for call in bearings.waiting:
@@ -95,10 +98,11 @@ class Reviews:
         self.control.put(("review-note", reviewcall.key(review), review, verdict))
         return True
 
-    def bearings(self, bearings):
-        """firstmate was read: forget the changes it no longer lists, and
-        look at what it did with the notes sent."""
-        listed = {reviewcall.key(c.review) for c in bearings.waiting if c.review is not None}
+    def bearings(self, bearings, keep=()):
+        """firstmate was read: forget the changes it no longer lists (but
+        keep, the keys of the changes a run's card shows), and look at what
+        it did with the notes sent."""
+        listed = {reviewcall.key(c.review) for c in bearings.waiting if c.review is not None} | set(keep)
         for k in [k for k in self.entries if k not in listed]:
             del self.entries[k]
         waiting = [(k, e.note) for k, e in self.entries.items() if e.phase == SENT and e.note]

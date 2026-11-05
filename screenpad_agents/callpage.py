@@ -169,7 +169,7 @@ def action(widget, board):
 def _review(call, reviews):
     """The two rows of a change ready for review: the call, and its buttons."""
     review = call.review
-    kind = "decision: %s" % call.text if call.text else "decision"
+    kind = "%s: %s" % (call.kind, call.text) if call.text else call.kind
     out = [{"id": CALL + "0", "label": fit(call.title, MAX_LABEL), "text": fit(kind, WIDE_TEXT_CHARS)}]
     out[0].update({"tone": "warning", "col": 0, "row": 1, "cols": 2, "rows": ROWS - 1, "touch": "none"})
     shown = reviewcall.buttons(review, reviews.entry(review), reviews.can_open)
