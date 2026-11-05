@@ -9,7 +9,10 @@ changes each tell firstmate with one inbox note, once: after one was sent
 (or while it is being sent) both stay on the page as its state, and only a
 failed one can be pressed again. Without [firstmate] review_command there
 is no Review, and no Request changes (it would open nothing): Approve takes
-the right half.
+the right half. A change is one round of review by its task and the head it
+is ready at; a call that names no head has no Approve or Request changes
+(their note could not tell this round from the last), only Review, and
+without a review command it is a plain call.
 
 Pure, as callpage.py is: it turns the call and what the app knows of it
 (Entry, kept by reviewrequest.py) into widgets, and says what a tap on one
@@ -50,10 +53,11 @@ class Entry:
         return self.phase in (SENDING, SENT, HANDLED)
 
 
-def first(bearings):
-    """The first call ready for review in bearings, None when none is."""
+def first(bearings, can_open):
+    """The first call ready for review in bearings that has a button (with
+    can_open, a review command is configured), None when none is."""
     for call in bearings.waiting if bearings is not None else ():
-        if call.review is not None:
+        if call.review is not None and (can_open or call.review.head):
             return call
     return None
 
@@ -71,7 +75,7 @@ def request_id(review, verdict):
     """The id of the note for this verdict on this change: the same every
     time, so the second press (or one after a restart) replays the note
     instead of sending another."""
-    digest = hashlib.sha256(("%s@%s/%s" % (review.task, review.head or "", verdict)).encode()).hexdigest()
+    digest = hashlib.sha256(("%s@%s/%s" % (review.task, review.head, verdict)).encode()).hexdigest()
     return "screenpad-review-%s-%s" % (verdict, digest[:24])
 
 
@@ -92,8 +96,9 @@ def buttons(review, entry, can_open):
         out.append(
             {"act": OPEN, "id": "%sopen.%s.%s" % (PREFIX, state, tok), "label": label, "text": text, "tone": tone}
         )
-    for act in (APPROVE, CHANGES) if can_open else (APPROVE,):
-        out.append(_verdict(act, review, entry, tok))
+    if review.head:
+        for act in (APPROVE, CHANGES) if can_open else (APPROVE,):
+            out.append(_verdict(act, review, entry, tok))
     return out
 
 

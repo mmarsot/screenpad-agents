@@ -402,12 +402,16 @@ class App:
             self._jobs.put(("keys", card.pane, agent.kind, value))
 
     def _focus_pane(self, pane):
-        """Focus pane's terminal in Herdr, unless its task is ready for
-        review and a review command is configured: then the review opens
-        instead (a terminal of little use to the reviewer)."""
+        """Focus pane's terminal in Herdr, unless its agent is done (idle or
+        done) and its task is ready for review with a review command
+        configured: then the review opens instead (a terminal of little use
+        to the reviewer). A blocked agent always gets its terminal."""
         if pane is None:
             return
-        review = self.reviews.ready(self.fleet.task_of(pane), self.fleet.bearings)
+        agent = self.fleet.agent_of(pane)
+        review = None
+        if agent is not None and agent.state in ("idle", "done"):
+            review = self.reviews.ready(self.fleet.task_of(pane), self.fleet.bearings)
         if review is None:
             self._jobs.put(("focus", pane))
         elif self.reviews.open(review):

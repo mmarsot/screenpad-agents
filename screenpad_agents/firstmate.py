@@ -94,7 +94,6 @@ REVIEW_HEAD = re.compile(r"ready for review at ([0-9a-f]{7,64})\b", re.IGNORECAS
 # The notes Approve and Request changes send to firstmate: what the captain
 # decided, about which task (and, for an approval, at which head).
 APPROVE_NOTE = "Captain approves the change for task %s (ready head %s)."
-APPROVE_NOTE_NO_HEAD = "Captain approves the change for task %s."
 CHANGES_NOTE = "Captain requests changes on task %s; review comments follow from the review window."
 
 # What fm-inbox.sh note --json and receipts print.
@@ -126,7 +125,9 @@ class Task:
 
 class Review:
     """A change ready for review: its task and the head it is ready at (None
-    when the call does not say)."""
+    when the call does not say: then it can be reviewed, but no verdict is
+    sent for it, since nothing would tell one round of review from the
+    next)."""
 
     __slots__ = ("head", "task")
 
@@ -278,8 +279,10 @@ class Firstmate:
         replays the first note rather than queueing another."""
         if not isinstance(review.task, str) or not TASK_ID.fullmatch(review.task):
             raise FirstmateError("not a firstmate task id: %r" % (review.task,))
+        if not review.head:
+            raise FirstmateError("not a change at a named head: task %s" % review.task)
         if verdict == "approve":
-            text = APPROVE_NOTE % (review.task, review.head) if review.head else APPROVE_NOTE_NO_HEAD % review.task
+            text = APPROVE_NOTE % (review.task, review.head)
         elif verdict == "changes":
             text = CHANGES_NOTE % review.task
         else:
@@ -401,9 +404,10 @@ def _decision(d):
         return None
     summary = _text(d.get("summary"))
     review = None
-    if d.get("key") == REVIEW_KEY and TASK_ID.fullmatch(title):
+    task = _text(d.get("id"))
+    if d.get("key") == REVIEW_KEY and task and TASK_ID.fullmatch(task):
         head = REVIEW_HEAD.search(summary or "")
-        review = Review(title, head[1] if head else None)
+        review = Review(task, head[1] if head else None)
     return Call("decision", title, summary, review)
 
 

@@ -75,6 +75,7 @@ class SourceTests(unittest.TestCase):
                 {"id": "fix-ui", "key": "code-review", "summary": "ready for review, no head named"},
                 {"id": "screenpad-grid-layout", "key": "screenpad-grid-layout", "verb": "captain-hold"},
                 {"id": "not a task id", "key": "code-review", "summary": READY},
+                {"key": "code-review", "summary": READY},
             )
         )
         self.assertEqual(
@@ -84,6 +85,7 @@ class SourceTests(unittest.TestCase):
                 ("fix-ui", Review("fix-ui")),
                 ("screenpad-grid-layout", None),
                 ("not a task id", None),
+                ("code-review", None),
             ],
         )
 
@@ -91,21 +93,19 @@ class SourceTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"FM_HOME": "/home/me/firstmate", "FM_BACKEND": "herdr"}):
             self.assertEqual(self.fm.review_note("rid-1", "approve", REVIEW), ("created", NOTE))
         self.assertEqual(self.fm.review_note("rid-2", "changes", REVIEW), ("created", NOTE))
-        self.fm.review_note("rid-3", "approve", Review("fix-ui"))
         texts = [(c["args"][3], c["args"][-1]) for c in self.notes()]
         self.assertEqual(
             texts,
             [
                 ("rid-1", "Captain approves the change for task fix-api (ready head %s)." % HEAD),
                 ("rid-2", "Captain requests changes on task fix-api; review comments follow from the review window."),
-                ("rid-3", "Captain approves the change for task fix-ui."),
             ],
         )
         # One configured home, no other FM_* variable, and only notes.
         self.assertEqual({(c["FM_HOME"], tuple(c["fm"])) for c in self.notes()}, {(self.home, ("FM_HOME",))})
         self.assertEqual(
             {tuple(c["args"][:4]) for c in self.notes()},
-            {("note", "--json", "--request-id", r) for r in ("rid-1", "rid-2", "rid-3")},
+            {("note", "--json", "--request-id", r) for r in ("rid-1", "rid-2")},
         )
 
     def test_the_same_decision_has_the_same_request_id(self):
@@ -126,7 +126,15 @@ class SourceTests(unittest.TestCase):
         self.assertIsNone(self.fm.review_note(request_id(REVIEW, "approve"), "approve", REVIEW))
 
     def test_a_note_for_something_else_is_refused(self):
-        for review, verdict in ((Review("../x", HEAD), "approve"), (Review("-rf"), "approve"), (REVIEW, "merge")):
+        refused = (
+            (Review("../x", HEAD), "approve"),
+            (Review("-rf"), "approve"),
+            (REVIEW, "merge"),
+            # No head: nothing tells this round of review from the last.
+            (Review("fix-ui"), "approve"),
+            (Review("fix-ui"), "changes"),
+        )
+        for review, verdict in refused:
             with self.subTest(review=review, verdict=verdict), self.assertRaisesRegex(FirstmateError, "not a"):
                 self.fm.review_note("rid", verdict, review)
         self.assertEqual(self.notes(), [])
@@ -229,12 +237,7 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(page["call.item.0"][0], "fix-api")
         self.assertNotIn("screenpad-grid-layout", [v[0] for v in page.values()])
         self.assertIn("1 more on the board", page["call.count"][1])
-        placed = {
-            w.id.split(".")[2]: (w.col, w.row, w.cols, w.rows)
-            for w in rig.apps.pages["calls"].widgets
-            if w.id.startswith("call.rv.")
-        }
-        self.assertEqual(placed, {"open": (2, 1, 1, 1), "approve": (3, 1, 1, 1), "changes": (2, 2, 2, 1)})
+        self.assertEqual(self.placed(rig), {"open": (2, 1, 1, 1), "approve": (3, 1, 1, 1), "changes": (2, 2, 2, 1)})
 
     def test_without_a_review_command_only_approve_is_shown(self):
         rig = self.rig(review=None)
@@ -242,6 +245,35 @@ class LoopTests(unittest.TestCase):
         self.press(rig, "call.rv.approve.idle")
         rig.until(lambda: self.firstmate.review_notes)
         self.assertEqual(self.firstmate.reviews_opened, [])
+
+    def placed(self, rig):
+        return {
+            w.id.split(".")[2]: (w.col, w.row, w.cols, w.rows)
+            for w in rig.apps.pages["calls"].widgets
+            if w.id.startswith("call.rv.")
+        }
+
+    def test_a_change_with_no_head_named_can_be_reviewed_but_not_answered(self):
+        self.firstmate.bearings = Bearings(
+            2, False, {}, waiting=[Call("decision", "fix-ui", "ready for review", Review("fix-ui")), OTHER]
+        )
+        rig = self.rig()
+        self.assertEqual(list(self.buttons(rig).values()), ["Review"])
+        self.assertEqual(self.placed(rig), {"open": (2, 1, 2, 2)})
+        self.press(rig, "call.rv.open.idle")
+        rig.until(lambda: self.firstmate.reviews_opened == ["fix-ui"])
+        for verdict in ("approve", "changes"):
+            rig.apps.press(rig.client(), "calls", "call.rv.%s.idle.%s" % (verdict, token(Review("fix-ui"))), "tap")
+        rig.turn(10)
+        self.assertEqual((self.firstmate.review_notes, self.firstmate.reviews_opened), ([], ["fix-ui"]))
+
+    def test_without_a_review_command_a_change_with_no_head_named_is_a_plain_call(self):
+        self.firstmate.bearings = Bearings(
+            2, False, {}, waiting=[Call("decision", "fix-ui", "ready for review", Review("fix-ui")), OTHER]
+        )
+        rig = self.rig(review=None)
+        self.assertEqual(self.buttons(rig), {})
+        self.assertEqual(self.page(rig)["call.item.0"][0], "fix-ui")
 
     def test_calls_that_are_not_ready_for_review_stay_as_they_are(self):
         self.firstmate.bearings = Bearings(
@@ -351,10 +383,11 @@ class LoopTests(unittest.TestCase):
 
 
 class FocusTests(unittest.TestCase):
-    """Focusing an agent whose task is ready for review opens the review."""
+    """Focusing an agent that is done and whose task is ready for review
+    opens the review; a blocked agent keeps its terminal."""
 
     def setUp(self):
-        self.herdr = FakeHerdr([("w1:p1", "claude", "blocked"), ("w2:p1", "claude", "working")])
+        self.herdr = FakeHerdr([("w1:p1", "claude", "idle"), ("w2:p1", "claude", "working")])
         self.tasks = {"lab:w1:p1": task("fix-api"), "lab:w2:p1": task("fix-ui")}
         self.firstmate = FakeFirstmate(calls=1, tasks=self.tasks)
         self.firstmate.bearings = Bearings(1, False, self.tasks, waiting=[CALL])
@@ -373,15 +406,22 @@ class FocusTests(unittest.TestCase):
         rig.until(lambda: rig.widgets()[0] == "card.screen")
         rig.apps.press(rig.client(), "agents", "card.focus", "tap")
 
-    def test_the_review_opens_in_place_of_the_terminal_of_a_task_ready_for_review(self):
+    def test_the_review_opens_in_place_of_the_terminal_of_a_done_task_ready_for_review(self):
         rig = self.rig()
-        self.focus_tile(rig)
-        rig.until(lambda: self.firstmate.reviews_opened == ["fix-api"])
         self.focus_card(rig, "w1:p1")
-        rig.until(lambda: self.firstmate.reviews_opened == ["fix-api", "fix-api"])
+        rig.until(lambda: self.firstmate.reviews_opened == ["fix-api"])
         rig.turn(10)
         # No terminal was focused, and nothing was sent to firstmate or an agent.
         self.assertEqual((self.herdr.focused, self.firstmate.review_notes, self.herdr.sent), ([], [], []))
+
+    def test_a_blocked_agent_keeps_its_terminal_though_its_task_is_ready_for_review(self):
+        self.herdr = FakeHerdr([("w1:p1", "claude", "blocked")])
+        rig = self.rig()
+        self.focus_tile(rig)
+        rig.until(lambda: self.herdr.focused == ["w1:p1"])
+        self.focus_card(rig, "w1:p1")
+        rig.until(lambda: self.herdr.focused == ["w1:p1", "w1:p1"])
+        self.assertEqual(self.firstmate.reviews_opened, [])
 
     def test_other_tasks_keep_their_terminal(self):
         rig = self.rig()
@@ -391,7 +431,7 @@ class FocusTests(unittest.TestCase):
 
     def test_without_a_review_command_the_terminal_is_focused_as_before(self):
         rig = self.rig(review=None)
-        self.focus_tile(rig)
+        self.focus_card(rig, "w1:p1")
         rig.until(lambda: self.herdr.focused == ["w1:p1"])
         self.assertEqual(self.firstmate.reviews_opened, [])
 
@@ -400,6 +440,6 @@ class FocusTests(unittest.TestCase):
             1, False, self.tasks, waiting=[Call("contribution", "fix-api", "merge: PR ready, checks green")]
         )
         rig = self.rig()
-        self.focus_tile(rig)
+        self.focus_card(rig, "w1:p1")
         rig.until(lambda: self.herdr.focused == ["w1:p1"])
         self.assertEqual(self.firstmate.reviews_opened, [])

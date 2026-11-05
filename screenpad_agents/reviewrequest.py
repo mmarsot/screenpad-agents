@@ -47,7 +47,7 @@ class Reviews:
 
     def choose(self, widget, bearings):
         """A tap on the page's widget; True if the page changed."""
-        call = reviewcall.first(bearings)
+        call = reviewcall.first(bearings, self.can_open)
         if call is None:
             return False
         review = call.review

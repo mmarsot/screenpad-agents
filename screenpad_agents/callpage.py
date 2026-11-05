@@ -123,7 +123,7 @@ def tone(bearings):
 def widgets(bearings, error, board, back=False, reviews=None):
     """The view's widgets: back adds Back, for the Agents page; reviews
     (reviewrequest.Reviews) gives the buttons of a change ready for review."""
-    review = reviewcall.first(bearings) if reviews is not None else None
+    review = reviewcall.first(bearings, reviews.can_open) if reviews is not None else None
     count = {"id": COUNT, "col": 0, "row": 0, "cols": 2 if back else 3, "touch": "none"}
     count.update({"label": summary(bearings, error), "tone": tone(bearings)})
     if bearings is None:
@@ -173,9 +173,9 @@ def _review(call, reviews):
     out = [{"id": CALL + "0", "label": fit(call.title, MAX_LABEL), "text": fit(kind, WIDE_TEXT_CHARS)}]
     out[0].update({"tone": "warning", "col": 0, "row": 1, "cols": 2, "rows": ROWS - 1, "touch": "none"})
     shown = reviewcall.buttons(review, reviews.entry(review), reviews.can_open)
-    # Review and Approve side by side over Request changes; or Approve alone.
-    cells = [(2, 1, 1), (3, 1, 1), (2, 2, 2)] if reviews.can_open else [(2, 1, 2)]
-    rows = 1 if reviews.can_open else ROWS - 1
+    # Review and Approve side by side over Request changes; or one alone.
+    cells = [(2, 1, 1), (3, 1, 1), (2, 2, 2)] if len(shown) == 3 else [(2, 1, 2)]
+    rows = 1 if len(shown) == 3 else ROWS - 1
     for b, (col, row, cols) in zip(shown, cells, strict=True):
         w = {k: v for k, v in b.items() if k != "act"}
         w["text"] = fit(w["text"], TEXT_CHARS if cols == 1 else WIDE_TEXT_CHARS)
