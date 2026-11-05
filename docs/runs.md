@@ -79,7 +79,7 @@ Tapping a run opens its card in place of the grid, until **Back** or the run lea
 - the findings' ids and severities from the last round of each step that has findings (at most six named, the rest counted), or no-mistakes' own summary (`6 info`);
 - `waiting on a decision: answer it in the agent's pane` while it waits at a gate, then the outcome and error once it ended.
 
-**Focus** (a spyglass) focuses the pane of the run's agent in Herdr, like Focus on an agent's card; with no agent joined it is dimmed and says so in place of its spyglass. The card answers nothing: a gate is answered where the run is driven, in the agent's pane.
+**Focus** (a spyglass) focuses the pane of the run's agent in Herdr, like Focus on an agent's card (which opens the review instead for a done agent whose task is [ready for review](agents.md#changes-ready-for-review)); with no agent joined it is dimmed and says so in place of its spyglass. The card answers nothing: a gate is answered where the run is driven, in the agent's pane.
 
 ## Opening a run's pull request
 
