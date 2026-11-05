@@ -79,6 +79,12 @@ class Fleet:
             return None
         return self.bearings.tasks.get("%s:%s" % (self.session, agent.pane))
 
+    def task_of(self, pane):
+        """The firstmate task whose endpoint is pane, None when it has none."""
+        if self.bearings is None:
+            return None
+        return self.bearings.tasks.get("%s:%s" % (self.session, pane))
+
     def agent_of(self, pane):
         return next((a for a in self.agents or [] if a.pane == pane), None)
 

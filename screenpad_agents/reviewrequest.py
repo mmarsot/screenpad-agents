@@ -59,6 +59,23 @@ class Reviews:
             changed = self._send(review, what) or changed
         return changed
 
+    def ready(self, task, bearings):
+        """The Review of task's change when it waits for review and a review
+        command is configured, else None: the agent's terminal is focused
+        as before. A task whose ready work is a pull request, with no
+        code-review decision, is not one."""
+        if task is None or bearings is None or not self.can_open:
+            return None
+        for call in bearings.waiting:
+            if call.review is not None and call.review.task == task.id:
+                return call.review
+        return None
+
+    def open(self, review):
+        """Start the review command for this change; True if the page
+        changed."""
+        return self._open(review)
+
     def _entry(self, review):
         return self.entries.setdefault(reviewcall.key(review), Entry())
 

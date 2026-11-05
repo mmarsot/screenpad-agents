@@ -402,8 +402,16 @@ class App:
             self._jobs.put(("keys", card.pane, agent.kind, value))
 
     def _focus_pane(self, pane):
-        if pane is not None:
+        """Focus pane's terminal in Herdr, unless its task is ready for
+        review and a review command is configured: then the review opens
+        instead (a terminal of little use to the reviewer)."""
+        if pane is None:
+            return
+        review = self.reviews.ready(self.fleet.task_of(pane), self.fleet.bearings)
+        if review is None:
             self._jobs.put(("focus", pane))
+        elif self.reviews.open(review):
+            self._dirty = True
 
     def refresh_calls(self):
         if self.firstmate is not None:

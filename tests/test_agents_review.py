@@ -348,3 +348,58 @@ class LoopTests(unittest.TestCase):
         rig.app.refresh_calls()
         rig.until(lambda: not self.buttons(rig))
         self.assertEqual(self.page(rig)["call.item.0"][0], "screenpad-grid-layout")
+
+
+class FocusTests(unittest.TestCase):
+    """Focusing an agent whose task is ready for review opens the review."""
+
+    def setUp(self):
+        self.herdr = FakeHerdr([("w1:p1", "claude", "blocked"), ("w2:p1", "claude", "working")])
+        self.tasks = {"lab:w1:p1": task("fix-api"), "lab:w2:p1": task("fix-ui")}
+        self.firstmate = FakeFirstmate(calls=1, tasks=self.tasks)
+        self.firstmate.bearings = Bearings(1, False, self.tasks, waiting=[CALL])
+
+    def rig(self, review=("/opt/review", "{task}")):
+        self.firstmate.review = list(review) if review else None
+        rig = Rig(self, self.herdr, self.firstmate)
+        rig.until(lambda: rig.apps.provided().get("calls", {}).get("badge") == "1")
+        return rig
+
+    def focus_tile(self, rig):
+        rig.apps.event("agents", "up", inside=True)
+
+    def focus_card(self, rig, pane):
+        rig.apps.press(rig.client(), "agents", "agent.%s" % pane.replace(":", "."), "tap")
+        rig.until(lambda: rig.widgets()[0] == "card.screen")
+        rig.apps.press(rig.client(), "agents", "card.focus", "tap")
+
+    def test_the_review_opens_in_place_of_the_terminal_of_a_task_ready_for_review(self):
+        rig = self.rig()
+        self.focus_tile(rig)
+        rig.until(lambda: self.firstmate.reviews_opened == ["fix-api"])
+        self.focus_card(rig, "w1:p1")
+        rig.until(lambda: self.firstmate.reviews_opened == ["fix-api", "fix-api"])
+        rig.turn(10)
+        # No terminal was focused, and nothing was sent to firstmate or an agent.
+        self.assertEqual((self.herdr.focused, self.firstmate.review_notes, self.herdr.sent), ([], [], []))
+
+    def test_other_tasks_keep_their_terminal(self):
+        rig = self.rig()
+        self.focus_card(rig, "w2:p1")
+        rig.until(lambda: self.herdr.focused == ["w2:p1"])
+        self.assertEqual(self.firstmate.reviews_opened, [])
+
+    def test_without_a_review_command_the_terminal_is_focused_as_before(self):
+        rig = self.rig(review=None)
+        self.focus_tile(rig)
+        rig.until(lambda: self.herdr.focused == ["w1:p1"])
+        self.assertEqual(self.firstmate.reviews_opened, [])
+
+    def test_a_task_whose_ready_work_is_a_pull_request_keeps_its_terminal(self):
+        self.firstmate.bearings = Bearings(
+            1, False, self.tasks, waiting=[Call("contribution", "fix-api", "merge: PR ready, checks green")]
+        )
+        rig = self.rig()
+        self.focus_tile(rig)
+        rig.until(lambda: self.herdr.focused == ["w1:p1"])
+        self.assertEqual(self.firstmate.reviews_opened, [])
