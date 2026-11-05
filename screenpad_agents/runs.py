@@ -302,6 +302,11 @@ class Runs:
         view = self._view(fleet, self.card.run_id) if self.card is not None else None
         return view.review() if view is not None else None
 
+    def ready_reviews(self, fleet):
+        """Every change ready for review a run listed leaves (View.review):
+        the ones whose entries a firstmate read keeps, open card or not."""
+        return [r for vs in self.views(fleet).values() for v in vs if (r := v.review()) is not None]
+
     def pane_review(self, fleet, pane):
         """The change ready for review that a run of the agent in pane
         leaves, if any: what focusing that agent opens instead of its

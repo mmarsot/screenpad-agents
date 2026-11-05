@@ -100,7 +100,7 @@ class Reviews:
 
     def bearings(self, bearings, keep=()):
         """firstmate was read: forget the changes it no longer lists (but
-        keep, the keys of the changes a run's card shows), and look at what
+        keep, the keys of the changes the runs listed leave ready), and look at what
         it did with the notes sent."""
         listed = {reviewcall.key(c.review) for c in bearings.waiting if c.review is not None} | set(keep)
         for k in [k for k in self.entries if k not in listed]:

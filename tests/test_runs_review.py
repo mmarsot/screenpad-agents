@@ -256,6 +256,25 @@ class LoopTests(unittest.TestCase):
         labels = {self.widget(rig, w.id).get("label") for w in rig.apps.pages["runs"].widgets}
         self.assertIn("Approved", labels)  # the change is not on Captain's Call, but its card keeps its entry
 
+    def test_the_verdict_stays_after_the_card_is_closed_and_firstmate_is_read_again(self):
+        rig = self.rig()
+        self.open_card(rig)
+        self.press(rig, "call.rv.approve.idle")
+        rig.until(lambda: len(self.firstmate.review_notes) == 1)
+        rig.apps.press(rig.client(), "runs", runcard.BACK, "tap")
+        rig.until(lambda: not any(w.id == runcard.LINES for w in rig.apps.pages["runs"].widgets))
+        reads = self.firstmate.reads
+        rig.app.refresh_calls()
+        rig.until(lambda: self.firstmate.reads > reads)
+        rig.turn(5)
+        self.open_card(rig)
+        ids = [w.id for w in rig.apps.pages["runs"].widgets]
+        self.assertTrue(any(i.startswith("call.rv.changes.locked") for i in ids), ids)
+        self.assertFalse(any(i.startswith("call.rv.approve.idle") for i in ids), ids)
+        self.press(rig, "call.rv.changes")
+        rig.turn(5)
+        self.assertEqual(len(self.firstmate.review_notes), 1)
+
     def test_focusing_a_done_agent_whose_run_is_ready_opens_the_review(self):
         rig = self.rig()
         self.open_card(rig)

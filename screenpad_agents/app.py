@@ -263,8 +263,8 @@ class App:
             value, error = rest
             self.fleet.set_bearings(value, error)
             if value is not None and not error:
-                shown = self.runs.board.card_review(self.fleet) if self.runs is not None else None
-                self.reviews.bearings(value, [reviewcall.key(shown)] if shown is not None else ())
+                ready = self.runs.board.ready_reviews(self.fleet) if self.runs is not None else []
+                self.reviews.bearings(value, [reviewcall.key(r) for r in ready])
             self._tell("firstmate", error)
             if self.runs is not None:
                 self.runs.update(self.fleet)
