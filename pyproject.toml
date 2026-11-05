@@ -76,6 +76,7 @@ module = [
     "test_agents_card",
     "test_agents_config",
     "test_agents_fleet",
+    "test_agents_review",
     "test_agents_sources",
     "test_install",
     "test_runs_app",

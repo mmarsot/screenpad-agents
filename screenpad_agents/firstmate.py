@@ -67,8 +67,9 @@ from .common import (
     FIRSTMATE_TIMEOUT,
     INBOX_TIMEOUT,
     LAVISH_TIMEOUT,
+    TASK_PLACEHOLDER,
 )
-from .desktop import OPENER, SCOPE, DesktopError, open_url
+from .desktop import OPENER, SCOPE, DesktopError, launch, open_url
 
 # A task id as fm-control.sh takes it: a bare id, never an option or an
 # endpoint.
@@ -84,6 +85,17 @@ BOARD_REQUEST = (
     "Please open the decisions board: /bearings lavish. "
     "Asked from Captain's Call on the ScreenPad, where no decisions board is open."
 )
+
+# A decision with this key is a change ready for review (a task's status
+# line "needs-decision [key=code-review]: ready for review at <head> ..."):
+# its id is the task, its summary names the head the task is ready at.
+REVIEW_KEY = "code-review"
+REVIEW_HEAD = re.compile(r"ready for review at ([0-9a-f]{7,64})\b", re.IGNORECASE)
+# The notes Approve and Request changes send to firstmate: what the captain
+# decided, about which task (and, for an approval, at which head).
+APPROVE_NOTE = "Captain approves the change for task %s (ready head %s)."
+APPROVE_NOTE_NO_HEAD = "Captain approves the change for task %s."
+CHANGES_NOTE = "Captain requests changes on task %s; review comments follow from the review window."
 
 # What fm-inbox.sh note --json and receipts print.
 NOTE_SCHEMA = "fm-inbox-note.v1"
@@ -112,20 +124,45 @@ class Task:
         return "Task(%r)" % self.id
 
 
-class Call:
-    """One Captain's Call waiting: a "decision" or a "contribution", its
-    title (the task) and what it is about (or None)."""
+class Review:
+    """A change ready for review: its task and the head it is ready at (None
+    when the call does not say)."""
 
-    __slots__ = ("kind", "text", "title")
+    __slots__ = ("head", "task")
 
-    def __init__(self, kind, title, text=None):
-        self.kind, self.title, self.text = kind, title, text
+    def __init__(self, task, head=None):
+        self.task, self.head = task, head
 
     def __eq__(self, other):
-        return isinstance(other, Call) and (self.kind, self.title, self.text) == (other.kind, other.title, other.text)
+        return isinstance(other, Review) and (self.task, self.head) == (other.task, other.head)
 
     def __hash__(self):
-        return hash((self.kind, self.title, self.text))
+        return hash((self.task, self.head))
+
+    def __repr__(self):
+        return "Review(%r, %r)" % (self.task, self.head)
+
+
+class Call:
+    """One Captain's Call waiting: a "decision" or a "contribution", its
+    title (the task) and what it is about (or None); review when it is a
+    change ready for review."""
+
+    __slots__ = ("kind", "review", "text", "title")
+
+    def __init__(self, kind, title, text=None, review=None):
+        self.kind, self.title, self.text, self.review = kind, title, text, review
+
+    def __eq__(self, other):
+        return isinstance(other, Call) and (self.kind, self.title, self.text, self.review) == (
+            other.kind,
+            other.title,
+            other.text,
+            other.review,
+        )
+
+    def __hash__(self):
+        return hash((self.kind, self.title, self.text, self.review))
 
     def __repr__(self):
         return "Call(%r, %r, %r)" % (self.kind, self.title, self.text)
@@ -170,10 +207,13 @@ class Firstmate:
         opener=OPENER,
         scope=SCOPE,
         paths=False,
+        review=None,
+        popen=None,
     ):
         self.home, self.bearings, self.control, self._run, self.timeout = home, bearings, control, run, timeout
         self.board, self.inbox, self.lavish, self.opener = board, inbox, list(lavish), list(opener)
         self.scope = list(scope)
+        self.review, self.popen = list(review) if review else None, popen
         self.fields = "endpoints,paths" if paths else "endpoints"
 
     def read(self):
@@ -228,7 +268,41 @@ class Firstmate:
         already handled, acknowledged or moved to handled/ (its replay wakes
         nothing: ask again under a new id); FirstmateError when it refused or
         failed."""
-        argv = [self._inbox(), "note", "--json", "--request-id", request_id, "--", BOARD_REQUEST]
+        return self._note(request_id, BOARD_REQUEST)
+
+    def review_note(self, request_id, verdict, review):
+        """Tell firstmate what the captain decided about a change ready for
+        review, with one inbox note under request_id: verdict "approve" or
+        "changes". What request_board returns, with the same replay rules:
+        request_id is the same for the same decision, so a second press
+        replays the first note rather than queueing another."""
+        if not isinstance(review.task, str) or not TASK_ID.fullmatch(review.task):
+            raise FirstmateError("not a firstmate task id: %r" % (review.task,))
+        if verdict == "approve":
+            text = APPROVE_NOTE % (review.task, review.head) if review.head else APPROVE_NOTE_NO_HEAD % review.task
+        elif verdict == "changes":
+            text = CHANGES_NOTE % review.task
+        else:
+            raise FirstmateError("not a review decision: %r" % (verdict,))
+        return self._note(request_id, text)
+
+    def open_review(self, task_id):
+        """Open task_id's change in the configured review command (its
+        {task} word is the task id), detached and in a scope of its own;
+        FirstmateError when none is configured, the id is not a task's, or
+        it did not start."""
+        if not self.review:
+            raise FirstmateError("no review_command is configured")
+        if not isinstance(task_id, str) or not TASK_ID.fullmatch(task_id):
+            raise FirstmateError("not a firstmate task id: %r" % (task_id,))
+        argv = [w.replace(TASK_PLACEHOLDER, task_id) for w in self.review]
+        try:
+            launch(argv, "the review command", self.scope, self.popen)
+        except DesktopError as e:
+            raise FirstmateError(str(e))
+
+    def _note(self, request_id, text):
+        argv = [self._inbox(), "note", "--json", "--request-id", request_id, "--", text]
         done = self._call(argv, "fm-inbox.sh note", INBOX_TIMEOUT)
         try:
             note = json.loads(done.stdout or "")
@@ -323,7 +397,14 @@ def _decision(d):
     if not isinstance(d, dict):
         return None
     title = _text(d.get("id")) or _text(d.get("key"))
-    return Call("decision", title, _text(d.get("summary"))) if title else None
+    if not title:
+        return None
+    summary = _text(d.get("summary"))
+    review = None
+    if d.get("key") == REVIEW_KEY and TASK_ID.fullmatch(title):
+        head = REVIEW_HEAD.search(summary or "")
+        review = Review(title, head[1] if head else None)
+    return Call("decision", title, summary, review)
 
 
 def _contribution(c):
