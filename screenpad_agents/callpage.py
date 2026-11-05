@@ -24,6 +24,11 @@ is fitted to its box at a word, with an ellipsis, so nothing is cut by the
 box; the whole of a call is on firstmate's decisions board. A lower bar
 (160 px by default) gives taller boxes, and the same words fit.
 
+A change ready for review (a decision keyed code-review) is answered here:
+the first one takes both rows, as the call on the left and its Review,
+Approve and Request changes buttons on the right (reviewcall.py); the other
+calls are counted in the count's box and wait on the board.
+
 The board's button says what a tap does now, and its id names that state
 (BOARD + state), so a tap on a button the page no longer shows does
 nothing (action returns None for it).
@@ -32,6 +37,7 @@ nothing (action returns None for it).
 from screenpad_app import clip
 from screenpad_app.common import MAX_BADGE, MAX_LABEL, MAX_TILE_TEXT
 
+from . import reviewcall
 from .common import BACK_ICON, BOARD_WAIT, CALLS_PAGE, CAPTAIN, icon
 
 COLUMNS, ROWS = 4, 3
@@ -114,19 +120,27 @@ def tone(bearings):
     return "warning" if badge(bearings) else "neutral"
 
 
-def widgets(bearings, error, board, back=False):
-    """The view's widgets: back adds Back, for the Agents page."""
+def widgets(bearings, error, board, back=False, reviews=None):
+    """The view's widgets: back adds Back, for the Agents page; reviews
+    (reviewrequest.Reviews) gives the buttons of a change ready for review."""
+    review = reviewcall.first(bearings, reviews.can_open) if reviews is not None else None
     count = {"id": COUNT, "col": 0, "row": 0, "cols": 2 if back else 3, "touch": "none"}
     count.update({"label": summary(bearings, error), "tone": tone(bearings)})
     if bearings is None:
         count["text"] = fit(error, WIDE_TEXT_CHARS) if error else "firstmate's reader takes a few seconds"
     else:
         words = "answered on firstmate's decisions board"
+        if review is not None:
+            others = max(bearings.calls, len(bearings.waiting)) - 1
+            more = "+" if bearings.more else ""
+            words = "%d%s more on the board" % (others, more) if others or more else "the others, on the board"
         count["text"] = fit("%s; %s" % (words, error) if error else words, WIDE_TEXT_CHARS)
     out = [count]
     if back:
         out.append({"id": BACK, "col": 2, "row": 0, "label": "Back", "icon": icon(BACK_ICON)})
     out.append(button(board))
+    if review is not None:
+        return out + _review(review, reviews)
     return out + _calls(bearings)
 
 
@@ -150,6 +164,24 @@ def action(widget, board):
     if widget == BOARD + board.state:
         return BUTTONS[board.state][3]
     return None
+
+
+def _review(call, reviews):
+    """The two rows of a change ready for review: the call, and its buttons."""
+    review = call.review
+    kind = "decision: %s" % call.text if call.text else "decision"
+    out = [{"id": CALL + "0", "label": fit(call.title, MAX_LABEL), "text": fit(kind, WIDE_TEXT_CHARS)}]
+    out[0].update({"tone": "warning", "col": 0, "row": 1, "cols": 2, "rows": ROWS - 1, "touch": "none"})
+    shown = reviewcall.buttons(review, reviews.entry(review), reviews.can_open)
+    # Review and Approve side by side over Request changes; or one alone.
+    cells = [(2, 1, 1), (3, 1, 1), (2, 2, 2)] if len(shown) == 3 else [(2, 1, 2)]
+    rows = 1 if len(shown) == 3 else ROWS - 1
+    for b, (col, row, cols) in zip(shown, cells, strict=True):
+        w = {k: v for k, v in b.items() if k != "act"}
+        w["text"] = fit(w["text"], TEXT_CHARS if cols == 1 else WIDE_TEXT_CHARS)
+        w.update({"col": col, "row": row, "cols": cols, "rows": rows})
+        out.append(w)
+    return out
 
 
 def _calls(bearings):
@@ -181,11 +213,18 @@ def _calls(bearings):
     return out
 
 
-def page(bearings, error, board):
+def page(bearings, error, board, reviews=None):
     """The "calls" page for the apps page."""
     msg = {"op": "page", "page": CALLS_PAGE, "title": "Captain's Call", "icon": icon(CAPTAIN)}
     msg["text"] = clip(summary(bearings, error), MAX_TILE_TEXT)
-    msg.update({"tone": tone(bearings), "columns": COLUMNS, "rows": ROWS, "widgets": widgets(bearings, error, board)})
+    msg.update(
+        {
+            "tone": tone(bearings),
+            "columns": COLUMNS,
+            "rows": ROWS,
+            "widgets": widgets(bearings, error, board, reviews=reviews),
+        }
+    )
     if badge(bearings):
         msg["badge"] = badge(bearings)
     return msg

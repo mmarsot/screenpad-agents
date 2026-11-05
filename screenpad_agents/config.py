@@ -19,6 +19,9 @@ ConfigError naming it.
   poll = 60                    # seconds, at least 60
   lavish = "lavish-axi"        # or a list: the program that lists Lavish's
                                # sessions, where the decisions board is open
+  review_command = "/path/to/review {task}"
+                               # optional, or a list: opens a change ready
+                               # for review ({task} is the task id)
 
   [runs]                       # optional: the Runs page (no-mistakes runs)
   repos = ["/path/to/repo"]    # repo directories to watch
@@ -43,6 +46,7 @@ from .common import (
     RUNS_IDLE_RANGE,
     RUNS_POLL,
     RUNS_POLL_RANGE,
+    TASK_PLACEHOLDER,
     ConfigError,
 )
 
@@ -70,6 +74,7 @@ class Config:
         "inbox",
         "lavish",
         "path",
+        "review",
         "runs",
         "session",
     )
@@ -80,6 +85,7 @@ class Config:
         self.path, self.herdr, self.session, self.herdr_poll = path, herdr, session, herdr_poll
         self.home, self.bearings, self.firstmate_poll, self.control = home, bearings, firstmate_poll, control
         self.board, self.inbox, self.lavish = None, None, list(LAVISH)
+        self.review = None  # the command that opens a change for review, with its {task} word
         self.runs = None
 
 
@@ -123,7 +129,7 @@ def parse(path, data):
     config = Config(path, command, session, herdr_poll)
     fm = _table(path, data, "firstmate")
     if fm is not None:
-        _known(path, fm, {"home", "code", "poll", "lavish"}, "key in [firstmate]")
+        _known(path, fm, {"home", "code", "poll", "lavish", "review_command"}, "key in [firstmate]")
         config.home = _directory(path, fm, "home")
         code = _directory(path, fm, "code")
         config.bearings, config.control = os.path.join(code, BEARINGS), os.path.join(code, CONTROL)
@@ -131,6 +137,8 @@ def parse(path, data):
         # them still runs the rest of the app.
         config.board, config.inbox = os.path.join(code, BOARD), os.path.join(code, INBOX)
         config.lavish = _command(path, fm.get("lavish", LAVISH), "[firstmate] lavish", "lavish-axi")
+        if "review_command" in fm:
+            config.review = _review(path, fm["review_command"])
         for script in (BEARINGS, CONTROL):
             if not os.access(os.path.join(code, script), os.X_OK):
                 raise ConfigError("%s: [firstmate] code has no executable %s" % (path, script))
@@ -139,6 +147,13 @@ def parse(path, data):
     if runs is not None:
         config.runs = _runs(path, runs, config.home is not None)
     return config
+
+
+def _review(path, value):
+    command = _command(path, value, "[firstmate] review_command", "/path/to/review")
+    if not any(TASK_PLACEHOLDER in word for word in command):
+        raise ConfigError("%s: [firstmate] review_command must hold {task}, where the task id goes" % path)
+    return command
 
 
 def _runs(path, table, firstmate):

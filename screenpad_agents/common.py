@@ -66,8 +66,13 @@ CONTROL_TIMEOUT = 60.0
 BOARD_TIMEOUT = 15.0
 LAVISH_TIMEOUT = 15.0
 OPEN_TIMEOUT = 15.0
+# A configured command is not waited for; a failure within this many seconds
+# of starting it is reported.
+LAUNCH_GRACE = 2.0
 # Asking firstmate for the board: one note in its inbox (fm-inbox.sh note).
 INBOX_TIMEOUT = 15.0
+# The word of [firstmate] review_command that becomes the task's id.
+TASK_PLACEHOLDER = "{task}"
 # After asking firstmate for the board, how long the app waits for it to be
 # open (seconds; building it takes about a minute): taps meanwhile queue no
 # second note, and the card then offers to ask again. While it waits it

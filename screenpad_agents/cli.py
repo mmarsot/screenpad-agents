@@ -28,6 +28,7 @@ def clients(config):
             inbox=config.inbox,
             lavish=config.lavish,
             paths=paths,
+            review=config.review,
         )
     return herdr, firstmate
 

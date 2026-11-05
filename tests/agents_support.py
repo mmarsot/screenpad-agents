@@ -339,7 +339,11 @@ class FakeFirstmate:
     request_error when it is set, and returns None (fm-inbox.sh's
     acknowledged replay) for an id in acknowledged; receipt gives
     receipts[note id], (None, None) for a note not listed, failing with
-    receipt_error when it is set, and counts its calls in checks."""
+    receipt_error when it is set, and counts its calls in checks. review is
+    its review command (None: none configured); review_note records each
+    note (request id, verdict, task, head) in review_notes, failing with
+    review_error when it is set, and open_review each task it opened.
+    bearings may name calls ready for review."""
 
     BOARD = "http://127.0.0.1:4387/session/b0a2d"
 
@@ -361,6 +365,10 @@ class FakeFirstmate:
         self.receipt_error = None
         self.checks = 0
         self.looks = 0
+        self.review: list | None = None
+        self.review_notes: list = []
+        self.review_error = None
+        self.reviews_opened: list = []
 
     def board_url(self):
         self.looks += 1
@@ -396,6 +404,17 @@ class FakeFirstmate:
         if request_id in self.acknowledged:
             return None
         return ("created", NOTE)
+
+    def review_note(self, request_id, verdict, review):
+        self.review_notes.append((request_id, verdict, review.task, review.head))
+        if self.review_error:
+            raise FirstmateError(self.review_error)
+        return ("created", NOTE)
+
+    def open_review(self, task_id):
+        self.reviews_opened.append(task_id)
+        if self.review_error:
+            raise FirstmateError(self.review_error)
 
     def interrupt(self, task_id):
         self.interrupted.append(task_id)

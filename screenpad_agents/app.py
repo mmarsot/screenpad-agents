@@ -59,6 +59,7 @@ from .common import why as _why
 from .firstmate import FirstmateError
 from .fleet import CALLS_WIDGET, Fleet
 from .herdr import HerdrError
+from .reviewrequest import Reviews
 from .runwatch import RunsWatch
 from .screen import guarded_send, read_screen
 
@@ -90,6 +91,8 @@ class App:
         self._dirty = False
         self.board = BoardRequest(firstmate, self._control, self._post, self.log, self.refresh_calls, clock)
         self.fleet.board = self.board.board
+        self.reviews = Reviews(firstmate, self._control, self._post, self.log)
+        self.fleet.reviews = self.reviews
 
     # --- the worker threads ------------------------------------------------
 
@@ -179,7 +182,7 @@ class App:
                 job = ("check",)  # the board's next check is due
             if job is None or self.stopping.is_set():
                 return
-            if self.board.work(job):
+            if self.board.work(job) or self.reviews.work(job):
                 continue
             _, pane, task_id = job
             try:
@@ -249,6 +252,8 @@ class App:
         elif what == "bearings":
             value, error = rest
             self.fleet.set_bearings(value, error)
+            if value is not None and not error:
+                self.reviews.bearings(value)
             self._tell("firstmate", error)
             if self.runs is not None:
                 self.runs.update(self.fleet)
@@ -272,6 +277,8 @@ class App:
                 card.note = "interrupt: %s" % (done or "failed: %s" % error)
         elif what in ("board", "look", "requested", "watched"):
             return self.board.result(what, *rest)
+        elif what.startswith("review-"):
+            return self.reviews.result(what, *rest)
         elif what == "log":
             self.log(rest[0])
             return False
@@ -320,7 +327,7 @@ class App:
         elif op == "error":
             self.log("the touch bar refused %s: %s" % (msg.get("request"), msg.get("message")))
         elif op == "event" and msg.get("page") == CALLS_PAGE and self.firstmate is not None:
-            if msg.get("type") == "tap" and self.board.choose(msg.get("widget")):
+            if msg.get("type") == "tap" and self._call_tap(msg.get("widget")):
                 self._dirty = True
         elif op == "event" and msg.get("page") == PAGE and msg.get("type") in ("tap", "long"):
             self._touch(msg.get("widget"), msg["type"])
@@ -344,7 +351,7 @@ class App:
             if widget == callpage.BACK:
                 self.fleet.close_calls()
                 self._dirty = True
-            elif self.board.choose(widget):
+            elif self._call_tap(widget):
                 self._dirty = True
         elif card is not None:
             self._card_touch(card, widget, touch)
@@ -357,6 +364,12 @@ class App:
             if pane is not None and self.fleet.open_card(pane) is not None:
                 self._jobs.put(("watch", pane))
                 self._dirty = True
+
+    def _call_tap(self, widget):
+        """A tap on Captain's Call's page: the board's button, or a change
+        ready for review; True if the page changed."""
+        board = self.board.choose(widget)
+        return self.reviews.choose(widget, self.fleet.bearings) or board
 
     def _card_touch(self, card, widget, touch):
         agent = self.fleet.agent_of(card.pane)
@@ -389,8 +402,20 @@ class App:
             self._jobs.put(("keys", card.pane, agent.kind, value))
 
     def _focus_pane(self, pane):
-        if pane is not None:
+        """Focus pane's terminal in Herdr, unless its agent is done (idle or
+        done) and its task is ready for review with a review command
+        configured: then the review opens instead (a terminal of little use
+        to the reviewer). A blocked agent always gets its terminal."""
+        if pane is None:
+            return
+        agent = self.fleet.agent_of(pane)
+        review = None
+        if agent is not None and agent.state in ("idle", "done"):
+            review = self.reviews.ready(self.fleet.task_of(pane), self.fleet.bearings)
+        if review is None:
             self._jobs.put(("focus", pane))
+        elif self.reviews.open(review):
+            self._dirty = True
 
     def refresh_calls(self):
         if self.firstmate is not None:

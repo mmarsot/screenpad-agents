@@ -57,6 +57,7 @@ class Fleet:
         self.card = None
         self.calls_open = False  # Captain's Call's view in place of the grid
         self.board = callpage.Board()  # the decisions board's state (boardrequest.py)
+        self.reviews = None  # the changes ready for review (reviewrequest.py)
         self._panes = {}
 
     def tiles(self):
@@ -77,6 +78,12 @@ class Fleet:
         if self.bearings is None:
             return None
         return self.bearings.tasks.get("%s:%s" % (self.session, agent.pane))
+
+    def task_of(self, pane):
+        """The firstmate task whose endpoint is pane, None when it has none."""
+        if self.bearings is None:
+            return None
+        return self.bearings.tasks.get("%s:%s" % (self.session, pane))
 
     def agent_of(self, pane):
         return next((a for a in self.agents or [] if a.pane == pane), None)
@@ -147,7 +154,7 @@ class Fleet:
         """The page and the tiles, as messages for the socket."""
         if not self.firstmate:
             return [self.page(), self.fleet_tile()]
-        calls = callpage.page(self.bearings, self.firstmate_error, self.board)
+        calls = callpage.page(self.bearings, self.firstmate_error, self.board, self.reviews)
         return [self.page(), calls, self.fleet_tile(), self.calls_tile()]
 
     def summary(self):
@@ -169,7 +176,7 @@ class Fleet:
         card = self.shown_card()
         if self.calls_open:
             self._panes = {}
-            widgets = callpage.widgets(self.bearings, self.firstmate_error, self.board, back=True)
+            widgets = callpage.widgets(self.bearings, self.firstmate_error, self.board, back=True, reviews=self.reviews)
             columns, rows = callpage.COLUMNS, callpage.ROWS
         elif card is not None:
             agent = self.agent_of(card.pane)

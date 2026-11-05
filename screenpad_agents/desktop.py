@@ -15,13 +15,19 @@ own. It gets none of the FM_* variables of the app's environment.
 
 Which URLs are opened is the caller's check: a loopback board URL, or a
 pull request's on the forge (nomistakes.pr_url).
+
+A configured command (the review launcher, [firstmate] review_command) is
+started the same way but never waited for (launch): its input and output go
+to /dev/null, it is a session of its own, and only a failure within
+LAUNCH_GRACE seconds is reported.
 """
 
 import os
 import shutil
 import subprocess
+import threading
 
-from .common import OPEN_TIMEOUT
+from .common import LAUNCH_GRACE, OPEN_TIMEOUT
 
 # The desktop's URL handler, and the transient scope (a cgroup of its own,
 # outside the app's unit) it runs in.
@@ -60,3 +66,29 @@ def open_url(url, what, run=None, scope=SCOPE, opener=OPENER, timeout=OPEN_TIMEO
     if done.returncode != 0:
         why = (done.stderr or "").strip().splitlines()
         raise DesktopError("%s failed: %s" % (what, why[-1] if why else "exit %d" % done.returncode))
+
+
+def launch(command, what, scope=SCOPE, popen=None, grace=LAUNCH_GRACE):
+    """Start command (a list) in a scope of its own and leave it running:
+    stdin and stdout go to /dev/null, errors to the app's own, and the
+    command is not waited for beyond grace seconds, so a terminal window it
+    opens (and the program in it) outlives the call. DesktopError when
+    systemd-run is missing or the command cannot start or exits non-zero
+    within grace."""
+    popen = popen or subprocess.Popen
+    found = shutil.which(scope[0])
+    if not found:
+        raise DesktopError("%s not found" % scope[0])
+    argv = [found] + list(scope[1:]) + list(command)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("FM_")}
+    try:
+        child = popen(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, start_new_session=True)
+    except OSError as e:
+        raise DesktopError("%s: %s" % (argv[0], e.strerror))
+    try:
+        code = child.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        threading.Thread(target=child.wait, daemon=True).start()  # reaped when it ends
+        return
+    if code != 0:
+        raise DesktopError("%s failed: exit %d" % (what, code))
