@@ -151,6 +151,16 @@ class RunsConfigTests(ConfigFiles):
         c = load(self.write('[herdr]\nsession = "lab"\n[runs]\nrepos = ["%s"]\n' % self.dir))
         self.assertEqual((c.runs.repos, c.runs.firstmate), ([self.dir], False))
 
+    def test_a_watch_command_has_a_run_word(self):
+        base = '[herdr]\nsession = "lab"\n[runs]\nrepos = ["%s"]\n' % self.dir
+        self.assertIsNone(load(self.write(base)).runs.watch)
+        # A string is split into words as a shell would, quotes kept together.
+        self.assertEqual(load(self.write(base + 'watch_command = "/opt/w {run}"\n')).runs.watch, ["/opt/w", "{run}"])
+        quoted = load(self.write(base + 'watch_command = "\'/opt/my watch\' --run={run} \\"a b\\""\n'))
+        self.assertEqual(quoted.runs.watch, ["/opt/my watch", "--run={run}", "a b"])
+        listed = load(self.write(base + 'watch_command = ["/opt/w", "--run={run}"]\n'))
+        self.assertEqual(listed.runs.watch, ["/opt/w", "--run={run}"])
+
     def test_runs_errors(self):
         herdr = '[herdr]\nsession = "x"\n'
         cases = [
@@ -164,6 +174,13 @@ class RunsConfigTests(ConfigFiles):
             ('[runs]\nrepos = ["%s"]\npoll = 60\nidle = 30\n' % self.dir, "idle must be at least its poll"),
             ('[runs]\nrepos = ["%s"]\ncommand = []\n' % self.dir, "command must be a program"),
             ('[runs]\nrepos = ["%s"]\nwho = 1\n' % self.dir, "unknown key in \\[runs\\] 'who'"),
+            ('[runs]\nrepos = ["%s"]\nwatch_command = "/opt/watch"\n' % self.dir, "watch_command must hold {run}"),
+            ('[runs]\nrepos = ["%s"]\nwatch_command = []\n' % self.dir, "watch_command must be a program"),
+            ('[runs]\nrepos = ["%s"]\nwatch_command = " "\n' % self.dir, "watch_command must be a program"),
+            (
+                '[runs]\nrepos = ["%s"]\nwatch_command = "/opt/w \\"{run}"\n' % self.dir,
+                "watch_command cannot be split into words",
+            ),
         ]
         for text, error in cases:
             with self.subTest(text=text), self.assertRaisesRegex(ConfigError, error):

@@ -89,6 +89,56 @@ class SourceTests(unittest.TestCase):
             ],
         )
 
+    def test_a_pull_request_waiting_for_the_captain_is_a_change_ready_for_review_too(self):
+        url = "https://github.com/o/r/pull/12"
+        pr = {
+            "task": "fix-ui",
+            "kind": "pr",
+            "url": url,
+            "head": "9d8e7f60aa",
+            "reason": "checks green; merge approval needed",
+        }
+        bad = [
+            dict(pr, task="fix-a", url="https://gitlab.com/o/r/pull/12"),  # not the forge
+            dict(pr, task="fix-b", kind="issue"),
+            dict(pr, task="../x"),
+            dict(pr, task="fix-c", head="main"),  # no head named
+        ]
+        m = dict(model({"id": "fix-api", "key": "code-review", "summary": READY}))
+        m["contributions"] = {"captain": [pr, dict(pr, task="fix-api", head=HEAD + "11223344")] + bad}
+        calls = {(c.kind, c.title): c.review for c in parse(m).waiting}
+        self.assertEqual(calls[("contribution", "fix-ui")], Review("fix-ui", "9d8e7f60aa", url))
+        self.assertEqual(calls[("contribution", "fix-c")], Review("fix-c", None, url))
+        for title in ("fix-a", "fix-b", "../x"):
+            self.assertIsNone(calls.get(("contribution", title)))
+        # The decision and the pull request of one task are one change: the
+        # decision takes the pull request, whose call is then a plain one.
+        self.assertEqual(calls[("decision", "fix-api")], Review("fix-api", HEAD, url))
+        self.assertIsNone(calls[("contribution", "fix-api")])
+        # Not when their heads differ.
+        m["contributions"] = {"captain": [dict(pr, task="fix-api", head="aaaaaaa1")]}
+        calls = {(c.kind, c.title): c.review for c in parse(m).waiting}
+        self.assertEqual(calls[("decision", "fix-api")], REVIEW)
+        self.assertEqual(calls[("contribution", "fix-api")], Review("fix-api", "aaaaaaa1", url))
+
+    def test_approving_a_pull_request_names_it_and_the_round_is_the_same_change(self):
+        url = "https://github.com/o/r/pull/12"
+        review = Review("fix-api", HEAD, url)
+        self.fm.review_note("rid-1", "approve", review)
+        self.assertEqual(
+            self.notes()[-1]["args"][-1],
+            "Captain approves the change for task fix-api (ready head %s) and approves merging %s." % (HEAD, url),
+        )
+        self.fm.review_note("rid-2", "changes", review)
+        self.assertTrue(self.notes()[-1]["args"][-1].startswith("Captain requests changes on task fix-api;"))
+        with self.assertRaisesRegex(FirstmateError, "not a pull request on the forge"):
+            self.fm.review_note("rid-3", "approve", Review("fix-api", HEAD, "https://example.com/o/r/pull/1"))
+        # A decision (a short head), a pull request (a full one) and a run
+        # (its own) naming one commit are one round, with one id.
+        same = [Review("fix-api", HEAD), Review("fix-api", HEAD + "11223344", url), Review("fix-api", HEAD.upper())]
+        self.assertEqual(len({request_id(r, "approve") for r in same}), 1)
+        self.assertEqual(len({token(r) for r in same}), 1)
+
     def test_the_notes_say_what_the_captain_decided(self):
         with mock.patch.dict(os.environ, {"FM_HOME": "/home/me/firstmate", "FM_BACKEND": "herdr"}):
             self.assertEqual(self.fm.review_note("rid-1", "approve", REVIEW), ("created", NOTE))
@@ -155,6 +205,25 @@ class SourceTests(unittest.TestCase):
             read_calls(os.path.join(self.dir, "launched.jsonl")), [{"args": ["--task=fix-api", "main"], "fm": []}]
         )
 
+    def test_a_review_command_written_as_a_string_starts_its_words_with_the_task(self):
+        path = os.path.join(self.dir, "agents.toml")
+        with open(path, "w") as f:
+            f.write(
+                '[herdr]\nsession = "lab"\n[firstmate]\nhome = "%s"\ncode = "%s"\n'
+                "review_command = \"%s --task={task} 'two words'\"\n" % (self.home, self.code, self.launcher)
+            )
+        review = load(path).review
+        fm = Firstmate(self.home, "r", "c", scope=[self.scope, *SCOPE[1:]], review=review)
+        fm.open_review("fix-api")
+        import time
+
+        end = time.monotonic() + 3
+        while not read_calls(os.path.join(self.dir, "launched.jsonl")) and time.monotonic() < end:
+            time.sleep(0.02)
+        self.assertEqual(
+            read_calls(os.path.join(self.dir, "launched.jsonl")), [{"args": ["--task=fix-api", "two words"], "fm": []}]
+        )
+
     def test_a_review_that_does_not_start_says_why(self):
         open(os.path.join(self.dir, "launcher.fail"), "w").close()
         with self.assertRaisesRegex(FirstmateError, "the review command failed: exit 2"):
@@ -188,14 +257,16 @@ class ConfigTests(unittest.TestCase):
         return load(path)
 
     def test_the_review_command_is_a_program_with_a_task_word(self):
-        self.assertEqual(self.load('review_command = "/opt/review {task}"\n').review, ["/opt/review {task}"])
+        self.assertEqual(self.load('review_command = "/opt/review {task}"\n').review, ["/opt/review", "{task}"])
         self.assertEqual(
             self.load('review_command = ["/opt/review", "--task", "{task}"]\n').review,
             ["/opt/review", "--task", "{task}"],
         )
-        for bad in ('"/opt/review"', "[]", "7", '["/opt/review", "x"]'):
+        for bad in ('"/opt/review"', "[]", "7", '["/opt/review", "x"]', '"  "'):
             with self.subTest(bad=bad), self.assertRaisesRegex(ConfigError, "review_command must"):
                 self.load("review_command = %s\n" % bad)
+        with self.assertRaisesRegex(ConfigError, "review_command cannot be split into words"):
+            self.load("review_command = '/opt/review \"{task}'\n")
 
     def test_without_it_there_is_no_review_command(self):
         from screenpad_agents.cli import clients
@@ -203,7 +274,7 @@ class ConfigTests(unittest.TestCase):
         c = self.load("")
         self.assertIsNone(c.review)
         self.assertIsNone(clients(c)[1].review)
-        self.assertEqual(clients(self.load('review_command = "/opt/r {task}"\n'))[1].review, ["/opt/r {task}"])
+        self.assertEqual(clients(self.load('review_command = "/opt/r {task}"\n'))[1].review, ["/opt/r", "{task}"])
 
 
 class LoopTests(unittest.TestCase):

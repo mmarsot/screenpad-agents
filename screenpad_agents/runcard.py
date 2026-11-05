@@ -7,21 +7,31 @@ ended; then Back, and Focus, which focuses the pane of the agent the run is
 joined to (the same Herdr focus as an agent's card), and, once the run has a
 pull request (no-mistakes' "pr", a pull request's URL on the forge:
 nomistakes.pr_url), Open PR, which opens it in the browser on the main
-screen (runwatch.py, desktop.py) and says whether it did. It answers no gate
-and starts, stops or retries nothing: a run waiting on a decision is
-answered in its agent's pane. Pure: runwatch.py reads the run while the card
-is open.
+screen (runwatch.py, desktop.py) and says whether it did. With [runs]
+watch_command, Watch opens a live view of the run (the command, started
+detached, runs.py's Runs.watch). A run whose pull request is ready for the
+captain (runs.View.review) also has Review, Approve and Request changes,
+those of Captain's Call (reviewcall.py), in the cards' bottom row, which
+then holds buttons only. It answers no gate and starts, stops or retries
+nothing: a run waiting on a decision is answered in its agent's pane. Pure:
+runwatch.py reads the run while the card is open.
 """
 
 from screenpad_app import clip
 from screenpad_app.common import MAX_LABEL, MAX_LINE_CHARS, MAX_LINES, MAX_TEXT
 
+from . import reviewcall
 from .callpage import LABEL_CHARS, TEXT_CHARS, fit
 from .common import BACK_ICON, FOCUS_ICON, PR_ICON, icon
 
 COLUMNS, ROWS = 5, 4
 LINES, BACK, FOCUS, AGENT, STATE = "runs.lines", "runs.back", "runs.focus", "runs.agent", "runs.state"
-PR = "runs.pr"
+PR, WATCH = "runs.pr", "runs.watch"
+# A button's box in the bottom row is a fifth of the bar: about 12 characters
+# of label and 57 of text (callpage.py measures a quarter: 16 and 72).
+CARD_LABEL, CARD_TEXT = 12, 57
+# What the review buttons say in a box that small.
+SHORT = {"Request changes": "Changes", "Changes requested": "Requested"}
 # Findings named on the card at most; the rest are counted.
 MAX_FINDINGS = 6
 
@@ -32,11 +42,35 @@ class RunCard:
     request's open: the URL being opened, the URL last opened, or (URL, why)
     when that open failed."""
 
-    __slots__ = ("detail", "error", "failed", "opened", "opening", "run_id")
+    __slots__ = (
+        "detail",
+        "error",
+        "failed",
+        "opened",
+        "opening",
+        "run_id",
+        "watch_error",
+        "watch_started",
+        "watching",
+    )
 
     def __init__(self, run_id):
         self.run_id, self.detail, self.error = run_id, None, None
         self.opening = self.opened = self.failed = None
+        # Watch: the command is being started, was started, or failed.
+        self.watching, self.watch_started, self.watch_error = False, False, None
+
+    def start_watch(self):
+        """Watch chosen: False while the command is being started."""
+        if self.watching:
+            return False
+        self.watching, self.watch_started, self.watch_error = True, False, None
+        return True
+
+    def watch_ended(self, error):
+        """The watch command started, or failed with error."""
+        self.watching = False
+        self.watch_started, self.watch_error = error is None, error
 
     def open_pr(self, url):
         """Open PR chosen for url: False while an open is on its way."""
@@ -51,11 +85,17 @@ class RunCard:
             self.opening = None
             self.opened, self.failed = (None, (url, error)) if error else (url, None)
 
-    def widgets(self, view):
-        """The card's widgets for view, the run as the page joins it."""
+    def widgets(self, view, review=None, watch=False):
+        """The card's widgets for view, the run as the page joins it: review
+        is (the change ready for review, its entry, whether a review command
+        is configured) when the run leaves one, and watch whether [runs]
+        watch_command is set."""
         detail = self.detail or view.detail
         lines = {"id": LINES, "col": 0, "row": 0, "cols": 4, "rows": 3, "touch": "none"}
-        lines["lines"] = self.lines(view, detail)
+        url = view.pr_url(detail)
+        row = self.bottom(url, review, watch)
+        # With no room for the state widget, its project is on the first line.
+        lines["lines"] = self.lines(view, detail, project=row[0] is None)
         out = [lines, {"id": BACK, "col": 4, "row": 0, "label": "Back", "icon": icon(BACK_ICON)}]
         focus = {"id": FOCUS, "col": 4, "row": 1, "label": "Focus"}
         if view.pane:
@@ -66,18 +106,49 @@ class RunCard:
         agent = {"id": AGENT, "col": 4, "row": 2, "label": clip(view.task or "no task", MAX_LABEL), "touch": "none"}
         agent["text"] = clip("pane %s" % view.pane if view.pane else "no agent", MAX_TEXT)
         out.append(agent)
-        url = view.pr_url(detail)
-        state = {"id": STATE, "col": 0, "row": 3, "cols": 4 if url else 5, "label": clip(view.project.name, MAX_LABEL)}
-        words = [view.phrase()]
-        if view.duplicate:
-            words.append("more than one active run for this agent, copy or branch")
-        elif view.attention and view.run.active:
-            words.append("answer it in its agent's pane")
-        state.update({"text": clip(" · ".join(words), MAX_TEXT), "tone": view.tone(), "touch": "none"})
-        out.append(state)
+        state, buttons = row
+        if state is not None:
+            words = [view.phrase()]
+            if view.duplicate:
+                words.append("more than one active run for this agent, copy or branch")
+            elif view.attention and view.run.active:
+                words.append("answer it in its agent's pane")
+            state.update({"label": clip(view.project.name, MAX_LABEL), "text": clip(" · ".join(words), MAX_TEXT)})
+            state.update({"tone": view.tone(), "touch": "none"})
+            out.append(state)
+        return out + buttons
+
+    def bottom(self, url, review, watch):
+        """The bottom row: (the state widget with its place, or None when
+        the buttons take the whole row, the buttons placed from the right):
+        the review's, Watch, then Open PR."""
+        buttons = []
+        if review is not None:
+            for b in reviewcall.buttons(review[0], review[1], review[2]):
+                w = {k: v for k, v in b.items() if k != "act"}
+                w["label"] = fit(SHORT.get(w["label"], w["label"]), CARD_LABEL)
+                w["text"] = fit(w["text"], CARD_TEXT)
+                buttons.append(w)
+        if watch:
+            buttons.append(self.watch_button())
         if url:
-            out.append(self.pr_button(url))
-        return out
+            buttons.append(self.pr_button(url))
+        first = COLUMNS - len(buttons)
+        for col, w in enumerate(buttons, start=first):
+            w.update({"col": col, "row": 3})
+        state = {"id": STATE, "col": 0, "row": 3, "cols": first} if first > 0 else None
+        return state, buttons
+
+    def watch_button(self):
+        """Watch: what a tap does, or that the command is starting, started,
+        or why it did not."""
+        button = {"id": WATCH, "label": "Watch"}
+        if self.watching:
+            return dict(button, text="starting the view…", touch="none")
+        if self.watch_error is not None:
+            return dict(button, text=fit("not opened: " + self.watch_error, CARD_TEXT), tone="reject")
+        text = "opened on the main screen" if self.watch_started else "live view of the run"
+        return dict(button, text=text, tone="accept")
 
     def pr_button(self, url):
         """Open PR, for the run's pull request at url: what a tap does, or
@@ -92,9 +163,10 @@ class RunCard:
         words = "PR #%s opened" if self.opened == url else "Open PR #%s"
         return dict(button, label=fit(words % number, LABEL_CHARS), icon=icon(PR_ICON))
 
-    def lines(self, view, detail):
+    def lines(self, view, detail, project=False):
         run = view.run
-        head = [run.branch, detail.status if detail is not None else run.status]
+        head = [view.project.name] if project else []
+        head += [run.branch, detail.status if detail is not None else run.status]
         if run.pr:
             head.append(run.pr)
         out = [" · ".join(head)]

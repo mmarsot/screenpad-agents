@@ -38,6 +38,7 @@ tile = "runs"
 | `[runs] firstmate` | `true` by default: with `[firstmate]`, also watch firstmate's registered clones and its live tasks' worktrees. `false` watches only `repos` |
 | `[runs] command` | the no-mistakes program, `"no-mistakes"` by default; or a list of words, for a wrapper and its arguments. The unit runs with your session's `PATH` |
 | `[runs] poll` | seconds between two reads while a run is active, 10 to 300, default 20 |
+| `[runs] watch_command` | optional: the command that opens a live view of a run, as a string (split into words as a shell would, quotes allowed, but no shell runs it) or a list of words, with `{run}` in it where the run's id goes, for example `"/path/to/watch-run {run}"`. Without it a run's card has no [Watch](#watching-a-run) |
 | `[runs] idle` | seconds between two reads while none is, 30 to 3600 and at least `poll`, default 120 |
 
 Without `[runs]` there is no Runs page and no `runs` tile, and no-mistakes is never run.
@@ -80,6 +81,29 @@ Tapping a run opens its card in place of the grid, until **Back** or the run lea
 - `waiting on a decision: answer it in the agent's pane` while it waits at a gate, then the outcome and error once it ended.
 
 **Focus** (a spyglass) focuses the pane of the run's agent in Herdr, like Focus on an agent's card (which opens the review instead for a done agent whose task is [ready for review](agents.md#changes-ready-for-review)); with no agent joined it is dimmed and says so in place of its spyglass. The card answers nothing: a gate is answered where the run is driven, in the agent's pane.
+
+## Watching a run
+
+With `[runs] watch_command` set, a run's card has **Watch**. A tap starts the command with the run's id in place of `{run}`, detached: its input and output go to `/dev/null`, it runs in a scope of its own (`systemd-run --user --scope --collect --quiet --`, like the browser and the review command), and the app does not wait for it beyond 2 seconds, so a terminal window it opens, and the program in it, outlive the call. The command is yours: it is meant to open a read-only live view of the run's step logs and of what the step agents do, on the main screen, and it can do that however you like (a terminal window running a log follower, for example). The app passes the id only when it is a run id as no-mistakes prints it, and none of its `FM_*` variables. The button says **starting the view…**, then `opened on the main screen`, or `not opened: why` in red when the command failed within 2 seconds of starting (its own message is in the journal) or `systemd-run` is missing; a tap tries again. Watch reads nothing of no-mistakes and polls nothing; it is on the card of every run, active or not.
+
+```toml
+[runs]
+watch_command = "/path/to/watch-run {run}"
+```
+
+## A ready pull request
+
+A run's card is also where a ready pull request is answered, with the [same buttons as Captain's Call](agents.md#changes-ready-for-review): **Review**, **Approve** and **Changes** (Request changes, shortened to fit a fifth of the bar), in the card's bottom row beside Watch and Open PR, when the run
+
+- is the newest run of its branch,
+- ended without failing (`completed`, `checks_passed` or `passed`) with a pull request on GitHub (the run's `pr`, as for Open PR),
+- and is joined to a firstmate task (without a task, the card has Open PR only).
+
+The buttons act exactly as on Captain's Call: Review and Request changes start `[firstmate] review_command` with the task's id, Approve and Request changes send firstmate one note through `fm-inbox.sh`, once, and Approve's note names the pull request (`Captain approves the change for task <id> (ready head <head>) and approves merging <url>.`); the head is the run's own (`axi`'s `head`), and a run that names none has Review only. Nothing here merges, and nothing here is driven in no-mistakes. Without `review_command` only Approve is shown. The verdict is the one of the round, the task and the first seven characters of the head, so approving on this card and on Captain's Call is one verdict, and the card keeps showing it as `Approved` while firstmate handles it.
+
+The bottom row holds these buttons only when it has room: with all of Review, Approve, Changes, Watch and Open PR there is no cell left for the state widget (the project, the run's phrase and tone), and the project moves to the first line of the card, before the branch. With fewer buttons the state widget keeps the cells they leave.
+
+A done agent (Herdr says `idle` or `done`) whose run is ready like this opens the review when its Focus is tapped, instead of its terminal ([agents](agents.md#changes-ready-for-review)): the Runs page's own Focus, an agent card's Focus.
 
 ## Opening a run's pull request
 
@@ -127,6 +151,9 @@ Each call takes about 30 ms. They run in a thread of their own, off the app's lo
 | A configured repo says `repo not initialized` | no-mistakes does not watch it: `no-mistakes init` there |
 | **No projects** | none of the directories configured or found is a repository no-mistakes watches |
 | A run shows without its agent or task | no repo copy the app knows has the run's branch checked out, or no Herdr agent's `cwd` is that copy; `screenpad-agents show` lists each run with its pane |
+| A run's card has no **Review**, **Approve** or **Changes** | it is not the newest run of its branch, it has not ended green, it has no GitHub pull request, no firstmate task is joined to it, or (for Review and Changes) `[firstmate] review_command` is not set; see [A ready pull request](#a-ready-pull-request) |
+| A run's card has no **Watch** | `[runs] watch_command` is not set |
+| **Watch** says **not opened** | the button says why: `systemd-run` missing, or the command exited non-zero within 2 seconds (its message is in the journal) |
 | A run's card has no **Open PR** | no-mistakes has not opened its pull request yet (the run's `pr` in `no-mistakes axi status --run <id>` is empty), or that `pr` is no GitHub pull request URL: only `https://github.com/<owner>/<repo>/pull/<number>` is opened |
 | **Open PR** says **not opened** | the button says why (the journal has it whole): `systemd-run` not found by the unit, it could not make the scope, or `gio open` failed (its own message is in the journal, `journalctl --user -u screenpad-agents`), as for [the decisions board](agents.md#troubleshooting) |
 | A project is red | more than one run is active for one agent, copy or branch; `no-mistakes axi status` in that copy says which run is the branch's |

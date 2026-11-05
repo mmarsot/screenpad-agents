@@ -81,6 +81,7 @@ module = [
     "test_install",
     "test_runs_app",
     "test_runs_page",
+    "test_runs_review",
     "test_runs_sources",
     "test_skills",
 ]

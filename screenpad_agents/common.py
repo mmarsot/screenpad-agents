@@ -5,6 +5,7 @@ library's (screenpad_app), as for any app.
 """
 
 import os
+import re
 
 import screenpad_app
 
@@ -73,6 +74,8 @@ LAUNCH_GRACE = 2.0
 INBOX_TIMEOUT = 15.0
 # The word of [firstmate] review_command that becomes the task's id.
 TASK_PLACEHOLDER = "{task}"
+# The word of [runs] watch_command that becomes the run's id.
+RUN_PLACEHOLDER = "{run}"
 # After asking firstmate for the board, how long the app waits for it to be
 # open (seconds; building it takes about a minute): taps meanwhile queue no
 # second note, and the card then offers to ask again. While it waits it
@@ -116,3 +119,20 @@ def icon(name):
 def config_path():
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
     return os.path.join(base, *CONFIG)
+
+
+# The forge whose pull requests the Runs page opens, and a pull request's
+# URL there: https, no user, port, query or fragment, only its own path
+# (owner, repository other than . or .., number).
+FORGE = "github.com"
+PR_URL = re.compile(
+    "https://"
+    + re.escape(FORGE)
+    + r"/[A-Za-z0-9][A-Za-z0-9-]{0,38}/(?!\.\.?/)[A-Za-z0-9._-]{1,100}/pull/[1-9][0-9]{0,9}"
+)
+
+
+def pr_url(text):
+    """text when it is a pull request's URL on FORGE (PR_URL), else None:
+    never a URL of another host, scheme or shape."""
+    return text if isinstance(text, str) and PR_URL.fullmatch(text) else None

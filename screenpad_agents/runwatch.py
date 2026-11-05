@@ -22,6 +22,11 @@ It also opens a run's pull request, on Open PR on the run's card: the URL
 no-mistakes gave (runs.View.pr_url), with the desktop's URL handler in a
 scope of its own (desktop.py), the one command here that acts; it reads
 nothing more for it.
+
+With [runs] watch_command, Watch on a run's card starts that command with the
+run's id (a Watch window of the run's steps), detached like the review
+command (desktop.launch): never waited for beyond its grace, its input and
+output to /dev/null, and it reads nothing of no-mistakes itself from here.
 """
 
 import os
@@ -30,9 +35,9 @@ import time
 
 from . import desktop
 from . import runs as model
-from .common import why
-from .nomistakes import NoMistakesError, NotARepo
-from .runcard import BACK, FOCUS, PR
+from .common import RUN_PLACEHOLDER, why
+from .nomistakes import RUN_ID, NoMistakesError, NotARepo
+from .runcard import BACK, FOCUS, PR, WATCH
 
 # A card's findings: the steps' rounds read at most.
 MAX_STEPS_READ = 4
@@ -43,11 +48,16 @@ def open_pr(url):
     desktop.open_url(url, "opening the PR")
 
 
+def start_watch(argv):
+    """Start the watch command argv, detached, in a scope of its own."""
+    desktop.launch(argv, "the watch command")
+
+
 class RunsWatch:
-    def __init__(self, settings, client, home, post, clock=time.monotonic, opener=open_pr):
+    def __init__(self, settings, client, home, post, clock=time.monotonic, opener=open_pr, launcher=start_watch):
         self.settings, self.client, self.home, self.post, self.clock = settings, client, home, post, clock
-        self.opener = opener
-        self.board = model.Runs()
+        self.opener, self.launcher = opener, launcher
+        self.board = model.Runs(watch=bool(settings.watch))
         self._jobs: queue.Queue = queue.Queue()
         self._places = None
         self._showing = False
@@ -76,6 +86,8 @@ class RunsWatch:
                     self._read_card(watching)
             elif job[0] == "open":
                 self._open(*job[1:])
+            elif job[0] == "launch":
+                self._launch(*job[1:])
             if not showing or self.clock() < due:
                 continue
             active = False
@@ -106,6 +118,14 @@ class RunsWatch:
             self.post("opened", run_id, url, why(e, desktop.DesktopError))
         else:
             self.post("opened", run_id, url, None)
+
+    def _launch(self, run_id, argv):
+        try:
+            self.launcher(argv)
+        except Exception as e:
+            self.post("launched", run_id, why(e, desktop.DesktopError))
+        else:
+            self.post("launched", run_id, None)
 
     def scan(self, worktrees=(), cwds=()):
         """One read of every project and copy: a runs.Scan;
@@ -196,6 +216,8 @@ class RunsWatch:
                 self._jobs.put(("watch", None))
         elif what == "opened":
             self.board.set_opened(*rest)
+        elif what == "launched":
+            self.board.set_launched(*rest)
         else:
             self.board.set_detail(*rest)
         return True
@@ -214,12 +236,24 @@ class RunsWatch:
                 return True, None
             if widget == PR:
                 return self._open_pr(fleet), None
+            if widget == WATCH:
+                return self._watch(), None
             return False, board.card_pane(fleet) if widget == FOCUS else None
         run_id = board.run_of(widget)
         if run_id is not None and board.open_card(run_id) is not None:
             self._jobs.put(("watch", run_id))
             return True, None
         return False, None
+
+    def _watch(self):
+        """Start the watch command for the open card's run, unless it is
+        being started: True when the card changed. The id goes into the
+        command only when it is a run id as no-mistakes prints it."""
+        card, command = self.board.card, self.settings.watch
+        if card is None or not command or not RUN_ID.fullmatch(card.run_id) or not card.start_watch():
+            return False
+        self._jobs.put(("launch", card.run_id, [w.replace(RUN_PLACEHOLDER, card.run_id) for w in command]))
+        return True
 
     def _open_pr(self, fleet):
         """Open the open card's pull request, unless an open is on its way:
