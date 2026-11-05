@@ -25,8 +25,8 @@ from screenpad_agents.firstmate import Bearings, Task
 from screenpad_agents.fleet import Fleet
 from screenpad_agents.herdr import Agent
 from screenpad_agents.reviewrequest import Reviews
-from screenpad_agents.runwatch import start_watch
 from screenpad_agents.runs import Runs, widget_id
+from screenpad_agents.runwatch import start_watch
 
 API, COPY = "/repos/api", "/pool/1/api"
 URL = "https://github.com/o/r/pull/12"
