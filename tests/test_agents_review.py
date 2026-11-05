@@ -205,6 +205,25 @@ class SourceTests(unittest.TestCase):
             read_calls(os.path.join(self.dir, "launched.jsonl")), [{"args": ["--task=fix-api", "main"], "fm": []}]
         )
 
+    def test_a_review_command_written_as_a_string_starts_its_words_with_the_task(self):
+        path = os.path.join(self.dir, "agents.toml")
+        with open(path, "w") as f:
+            f.write(
+                '[herdr]\nsession = "lab"\n[firstmate]\nhome = "%s"\ncode = "%s"\n'
+                "review_command = \"%s --task={task} 'two words'\"\n" % (self.home, self.code, self.launcher)
+            )
+        review = load(path).review
+        fm = Firstmate(self.home, "r", "c", scope=[self.scope, *SCOPE[1:]], review=review)
+        fm.open_review("fix-api")
+        import time
+
+        end = time.monotonic() + 3
+        while not read_calls(os.path.join(self.dir, "launched.jsonl")) and time.monotonic() < end:
+            time.sleep(0.02)
+        self.assertEqual(
+            read_calls(os.path.join(self.dir, "launched.jsonl")), [{"args": ["--task=fix-api", "two words"], "fm": []}]
+        )
+
     def test_a_review_that_does_not_start_says_why(self):
         open(os.path.join(self.dir, "launcher.fail"), "w").close()
         with self.assertRaisesRegex(FirstmateError, "the review command failed: exit 2"):
@@ -238,14 +257,16 @@ class ConfigTests(unittest.TestCase):
         return load(path)
 
     def test_the_review_command_is_a_program_with_a_task_word(self):
-        self.assertEqual(self.load('review_command = "/opt/review {task}"\n').review, ["/opt/review {task}"])
+        self.assertEqual(self.load('review_command = "/opt/review {task}"\n').review, ["/opt/review", "{task}"])
         self.assertEqual(
             self.load('review_command = ["/opt/review", "--task", "{task}"]\n').review,
             ["/opt/review", "--task", "{task}"],
         )
-        for bad in ('"/opt/review"', "[]", "7", '["/opt/review", "x"]'):
+        for bad in ('"/opt/review"', "[]", "7", '["/opt/review", "x"]', '"  "'):
             with self.subTest(bad=bad), self.assertRaisesRegex(ConfigError, "review_command must"):
                 self.load("review_command = %s\n" % bad)
+        with self.assertRaisesRegex(ConfigError, "review_command cannot be split into words"):
+            self.load("review_command = '/opt/review \"{task}'\n")
 
     def test_without_it_there_is_no_review_command(self):
         from screenpad_agents.cli import clients
@@ -253,7 +274,7 @@ class ConfigTests(unittest.TestCase):
         c = self.load("")
         self.assertIsNone(c.review)
         self.assertIsNone(clients(c)[1].review)
-        self.assertEqual(clients(self.load('review_command = "/opt/r {task}"\n'))[1].review, ["/opt/r {task}"])
+        self.assertEqual(clients(self.load('review_command = "/opt/r {task}"\n'))[1].review, ["/opt/r", "{task}"])
 
 
 class LoopTests(unittest.TestCase):

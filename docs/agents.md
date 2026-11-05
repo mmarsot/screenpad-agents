@@ -91,7 +91,7 @@ To turn it off: `systemctl --user disable --now screenpad-agents`. Removing the 
 | `[firstmate] home` | your firstmate home, an absolute path. There is no default: without `[firstmate]` nothing of firstmate is read, and the page has no Captain's Call |
 | `[firstmate] code` | the firstmate checkout, an absolute path; it must have an executable `bin/fm-bearings-snapshot.sh` and `bin/fm-control.sh`. Captain's Call also uses its `bin/fm-bearings-board.sh` and `bin/fm-inbox.sh`, checked when you tap |
 | `[firstmate] poll` | seconds between two reads of firstmate, 60 to 3600, default 60 |
-| `[firstmate] review_command` | optional: the command that opens a change ready for review, as a string or a list of words, with `{task}` in it where the task's id goes, for example `"/path/to/review-launcher {task}"`. Without it the [review buttons](#changes-ready-for-review) are only Approve |
+| `[firstmate] review_command` | optional: the command that opens a change ready for review, as a string (split into words as a shell would, quotes allowed, but no shell runs it) or a list of words, with `{task}` in it where the task's id goes, for example `"/path/to/review-launcher {task}"`. Without it the [review buttons](#changes-ready-for-review) are only Approve |
 | `[firstmate] lavish` | the program that lists Lavish's sessions, to find the decisions board open: `"lavish-axi"` by default; or a list of words, such as a `node` and the script |
 | `[runs]` | optional: the [Runs page](runs.md#turning-it-on) and its settings (`repos`, `firstmate`, `command`, `poll`, `idle`, `watch_command`). Without it no-mistakes is never run |
 

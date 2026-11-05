@@ -38,7 +38,7 @@ tile = "runs"
 | `[runs] firstmate` | `true` by default: with `[firstmate]`, also watch firstmate's registered clones and its live tasks' worktrees. `false` watches only `repos` |
 | `[runs] command` | the no-mistakes program, `"no-mistakes"` by default; or a list of words, for a wrapper and its arguments. The unit runs with your session's `PATH` |
 | `[runs] poll` | seconds between two reads while a run is active, 10 to 300, default 20 |
-| `[runs] watch_command` | optional: the command that opens a live view of a run, as a string or a list of words, with `{run}` in it where the run's id goes, for example `"/path/to/watch-run {run}"`. Without it a run's card has no [Watch](#watching-a-run) |
+| `[runs] watch_command` | optional: the command that opens a live view of a run, as a string (split into words as a shell would, quotes allowed, but no shell runs it) or a list of words, with `{run}` in it where the run's id goes, for example `"/path/to/watch-run {run}"`. Without it a run's card has no [Watch](#watching-a-run) |
 | `[runs] idle` | seconds between two reads while none is, 30 to 3600 and at least `poll`, default 120 |
 
 Without `[runs]` there is no Runs page and no `runs` tile, and no-mistakes is never run.

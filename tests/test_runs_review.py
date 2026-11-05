@@ -6,19 +6,26 @@ the buttons in the loop (one note per verdict, the review opened through
 the review command), and focusing a done agent whose run is ready opening
 the review. no-mistakes, Herdr and firstmate are fakes."""
 
+import os
+import tempfile
+import time
 import unittest
+from unittest import mock
 
-from agents_support import SESSION, FakeFirstmate, FakeHerdr, Rig, config
+from agents_support import SESSION, FakeFirstmate, FakeHerdr, Rig, config, read_calls, write_script
 from bar_support import Apps, FakeClient
+from desktop_support import fake_scope
 from runs_support import FakeNoMistakes, run, run_id, scan
 
 from screenpad_agents import reviewcall, runcard
 from screenpad_agents.config import Runs as RunsSettings
+from screenpad_agents.config import parse
 from screenpad_agents.desktop import DesktopError
 from screenpad_agents.firstmate import Bearings, Task
 from screenpad_agents.fleet import Fleet
 from screenpad_agents.herdr import Agent
 from screenpad_agents.reviewrequest import Reviews
+from screenpad_agents.runwatch import start_watch
 from screenpad_agents.runs import Runs, widget_id
 
 API, COPY = "/repos/api", "/pool/1/api"
@@ -174,10 +181,10 @@ class LoopTests(unittest.TestCase):
         if self.watch_error:
             raise DesktopError(self.watch_error)
 
-    def rig(self, watch=("/opt/watch", "{run}")):
+    def rig(self, watch=("/opt/watch", "{run}"), launcher=None):
         cfg = config(herdr_poll=0.05)
         cfg.runs = RunsSettings([API], True, poll=0.05, idle=60.0, watch=watch)
-        rig = Rig(self, self.herdr, self.firstmate, cfg=cfg, nomistakes=self.nm, launcher=self.launch)
+        rig = Rig(self, self.herdr, self.firstmate, cfg=cfg, nomistakes=self.nm, launcher=launcher or self.launch)
         rig.until(lambda: self.widget(rig, widget_id("run.", run_id(2))).get("label") == "fix-api")
         return rig
 
@@ -209,6 +216,31 @@ class LoopTests(unittest.TestCase):
         self.assertIn("the watch view did not open: the watch command failed: exit 1", rig.logged)
         self.assertEqual(len(self.watched), 2)
         self.assertEqual(self.herdr.sent, [])
+
+    def test_a_watch_command_written_as_a_string_starts_its_words_with_the_run_id(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        here = os.path.realpath(tmp.name)
+        fake_scope(here)  # the systemd-run found on PATH: no unit is made
+        watcher = write_script(
+            os.path.join(here, "watch run"),
+            """
+            import json, os, sys
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "watched.jsonl"), "a") as f:
+                f.write(json.dumps(sys.argv[1:]) + "\\n")
+            """,
+        )
+        settings = {"repos": [here], "watch_command": "'%s' --run={run} \"a b\"" % watcher}
+        watch = parse("agents.toml", {"herdr": {"session": "lab"}, "runs": settings}).runs.watch
+        with mock.patch.dict(os.environ, {"PATH": here + os.pathsep + os.environ.get("PATH", "")}):
+            rig = self.rig(watch=watch, launcher=start_watch)
+            self.open_card(rig)
+            rig.apps.press(rig.client(), "runs", runcard.WATCH, "tap")
+            rig.until(lambda: self.widget(rig, runcard.WATCH).get("text") == "opened on the main screen")
+        end = time.monotonic() + 3
+        while not read_calls(os.path.join(here, "watched.jsonl")) and time.monotonic() < end:
+            time.sleep(0.02)
+        self.assertEqual(read_calls(os.path.join(here, "watched.jsonl")), [["--run=" + run_id(2), "a b"]])
 
     def test_there_is_no_watch_without_a_watch_command(self):
         rig = self.rig(watch=None)

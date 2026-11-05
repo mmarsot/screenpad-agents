@@ -6,7 +6,9 @@ is strict, as touchbar.toml is: an unknown table or key, or a bad value, is a
 ConfigError naming it.
 
   [herdr]
-  command = "herdr"            # or a list: a wrapper and its arguments
+  command = "herdr"            # or a list: a wrapper and its arguments (a
+                               # string is split into words like a shell
+                               # would, quotes allowed; no shell runs it)
   session = "default"          # the Herdr session the agents run in
   poll = 2                     # seconds between two reads of Herdr
 
@@ -38,6 +40,7 @@ ConfigError naming it.
 
 import os
 import re
+import shlex
 import tomllib
 
 from .common import (
@@ -203,7 +206,14 @@ def _table(path, data, name):
 
 
 def _command(path, value, key, example):
-    words = [value] if isinstance(value, str) else value
+    # A string is split into words as a shell would (quotes allowed), but no
+    # shell runs it; a list is the words as they are.
+    words = value
+    if isinstance(value, str):
+        try:
+            words = shlex.split(value)
+        except ValueError as e:
+            raise ConfigError("%s: %s cannot be split into words: %s" % (path, key, e))
     if not isinstance(words, list) or not words or not all(isinstance(w, str) and w for w in words):
         raise ConfigError('%s: %s must be a program, or a list of words like ["%s"]' % (path, key, example))
     return list(words)
