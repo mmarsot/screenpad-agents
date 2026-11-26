@@ -40,15 +40,17 @@ class ConfigTests(ConfigFiles):
         c = load(self.write('[herdr]\nsession = "default"\n'))
         self.assertEqual((c.herdr, c.session, c.herdr_poll), (["herdr"], "default", 2.0))
         self.assertIsNone(c.home)
+        self.assertIs(c.agents_page, False)
 
     def test_every_setting(self):
         c = load(
             self.write(
-                '[herdr]\ncommand = ["wrap", "herdr"]\nsession = "lab-1"\npoll = 5\n'
+                '[herdr]\ncommand = ["wrap", "herdr"]\nsession = "lab-1"\npoll = 5\nagents_page = true\n'
                 '[firstmate]\nhome = "%s"\ncode = "%s"\npoll = 120\n' % (self.home, self.code)
             )
         )
         self.assertEqual((c.herdr, c.session, c.herdr_poll), (["wrap", "herdr"], "lab-1", 5.0))
+        self.assertIs(c.agents_page, True)
         self.assertEqual(c.home, self.home)
         self.assertEqual(c.bearings, os.path.join(self.code, "bin", "fm-bearings-snapshot.sh"))
         self.assertEqual(c.control, os.path.join(self.code, "bin", "fm-control.sh"))
@@ -95,6 +97,8 @@ class ConfigTests(ConfigFiles):
             ('[herdr]\nsession = "x"\ncommand = ["herdr", 2]\n', "command must be"),
             ('[herdr]\nsession = "x"\npoll = 0.5\n', "poll must be 1 to 60"),
             ('[herdr]\nsession = "x"\npoll = true\n', "poll must be"),
+            ('[herdr]\nsession = "x"\nagents_page = 1\n', "agents_page must be true or false"),
+            ('[herdr]\nsession = "x"\nagents_page = "yes"\n', "agents_page must be true or false"),
             ('[herdr]\nsession = "x"\n' + fm + "poll = 30\n", "poll must be 60 to 3600"),
             (
                 '[herdr]\nsession = "x"\n[firstmate]\nhome = "rel"\ncode = "%s"\n' % self.code,

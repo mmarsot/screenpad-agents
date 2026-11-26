@@ -94,6 +94,15 @@ class ParseTests(unittest.TestCase):
             ],
         )
 
+    def test_a_reset_time_with_no_offset_is_read_in_the_local_zone(self):
+        # ISO 8601 without an offset is local time; it must compare with the aware clock.
+        local = dict(CLAUDE_UP, windows=[window("five_hour", "session", 42.4, "2026-11-26T14:30:00", "session")])
+        (claude,) = usage.parse(quota(local))
+        self.assertIsNotNone(claude.resets.tzinfo)
+        self.assertEqual(claude.resets, datetime(2026, 11, 26, 14, 30).astimezone())
+        now = datetime(2026, 11, 26, 12, 0).astimezone()
+        self.assertEqual(usagepage.reset_in(claude.resets, now), "in 2h30")
+
     def test_only_the_listed_providers_count_in_the_order_listed(self):
         self.assertEqual([p.name for p in usage.parse(TODAY, ["claude"])], ["claude"])
         self.assertEqual([p.name for p in usage.parse(TODAY, ["codex", "claude"])], ["codex", "claude"])
@@ -472,8 +481,8 @@ def wait_for(check, seconds=3.0):
 class UsageLoopTests(unittest.TestCase):
     """The tile and the Limits page in the app's loop, against the stand-in touch bar."""
 
-    def rig(self, run, launched, providers=None, firstmate=True, runs=None):
-        cfg = config()
+    def rig(self, run, launched, providers=None, firstmate=True, runs=None, agents_page=True):
+        cfg = config(agents_page=agents_page)
         cfg.usage = UsageSettings(providers=providers)
         if runs:
             cfg.runs = runs
@@ -541,7 +550,17 @@ class UsageLoopTests(unittest.TestCase):
         self.assertNotIn("usage", rig.handled[0]["tiles"])
         self.assertNotIn("limits", rig.apps.pages)
 
-    def test_the_touch_bar_takes_four_pages_so_the_calls_page_gives_way_to_the_limits_page(self):
+    def test_the_touch_bar_takes_four_pages_calls_projects_runs_and_limits_without_the_agents_page(self):
+        # Without [herdr] agents_page, firstmate's app gives Captain's Call,
+        # Projects, Runs and Limits: the four pages the touch bar takes.
+        cfg = RunsSettings([API], True, poll=60.0, idle=60.0)
+        rig = self.rig(lambda argv, **kw: done(TODAY), [], runs=cfg, agents_page=False)
+        rig.until(lambda: "limits" in rig.apps.pages and "runs" in rig.apps.pages)
+        self.assertEqual(sorted(rig.apps.pages), ["calls", "limits", "projects", "runs"])
+        self.assertFalse([line for line in rig.logged if "refused" in line or "no calls page" in line], rig.logged)
+        self.assertIn("agents", rig.apps.provided())  # the agents tile stays
+
+    def test_with_the_agents_page_and_every_other_page_on_the_calls_page_gives_way(self):
         # Agents, Projects and Limits, and Captain's Call's own page: four.
         rig = self.rig(lambda argv, **kw: done(TODAY), [])
         rig.until(lambda: "limits" in rig.apps.pages)

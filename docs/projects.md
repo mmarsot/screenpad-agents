@@ -1,6 +1,6 @@
 # The Projects page
 
-**Projects** (`projects`) is a page of the [agent app](agents.md) for the touch bar: firstmate's projects, each with the settings that decide how its work is done, switchable with a tap. It replaces the Agents page on the bar: the Agents page is still there, [one level down](agents.md#the-agents-page).
+**Projects** (`projects`) is a page of the [agent app](agents.md) for the touch bar: firstmate's projects, each with the settings that decide how its work is done, switchable with a tap. It replaces the Agents page on the bar: the Agents page is given only with `[herdr] agents_page = true` ([the Agents page](agents.md#the-agents-page)).
 
 It needs `[firstmate]` in `agents.toml` (the page reads firstmate's home) and nothing else. Without `[firstmate]` there is no Projects page.
 

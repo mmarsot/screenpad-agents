@@ -11,6 +11,9 @@ ConfigError naming it.
                                # would, quotes allowed; no shell runs it)
   session = "default"          # the Herdr session the agents run in
   poll = 2                     # seconds between two reads of Herdr
+  agents_page = false          # with [firstmate], also give the Agents page
+                               # (without firstmate it is always given); with
+                               # it on and every page on, the calls page goes
 
   [firstmate]                  # optional: tasks and Captain's Calls
   home = "/path/to/firstmate"  # FM_HOME
@@ -103,6 +106,7 @@ class Config:
     None when the config has no [firstmate])."""
 
     __slots__ = (
+        "agents_page",
         "bearings",
         "board",
         "control",
@@ -125,6 +129,7 @@ class Config:
         self.path, self.herdr, self.session, self.herdr_poll = path, herdr, session, herdr_poll
         self.home, self.bearings, self.firstmate_poll, self.control = home, bearings, firstmate_poll, control
         self.board, self.inbox, self.lavish = None, None, list(LAVISH)
+        self.agents_page = False  # [herdr] agents_page: the Agents page with firstmate too
         self.review = None  # the command that opens a change for review, with its {task} word
         self.runs = None
         self.usage = None
@@ -191,13 +196,16 @@ def parse(path, data):
     herdr = _table(path, data, "herdr")
     if herdr is None:
         raise ConfigError("%s: [herdr] is required, with at least its session" % path)
-    _known(path, herdr, {"command", "session", "poll"}, "key in [herdr]")
+    _known(path, herdr, {"command", "session", "poll", "agents_page"}, "key in [herdr]")
     command = _command(path, herdr.get("command", "herdr"), "[herdr] command", "herdr")
     session = herdr.get("session")
     if not isinstance(session, str) or not SESSION.fullmatch(session):
         raise ConfigError('%s: [herdr] session must be a Herdr session name, like "default"' % path)
     herdr_poll = _seconds(path, herdr, "herdr", HERDR_POLL, HERDR_POLL_RANGE)
     config = Config(path, command, session, herdr_poll)
+    config.agents_page = herdr.get("agents_page", False)
+    if not isinstance(config.agents_page, bool):
+        raise ConfigError("%s: [herdr] agents_page must be true or false" % path)
     fm = _table(path, data, "firstmate")
     if fm is not None:
         _known(path, fm, {"home", "code", "poll", "lavish", "review_command"}, "key in [firstmate]")

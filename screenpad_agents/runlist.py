@@ -25,6 +25,7 @@ from .runmodel import widget_id
 
 COLUMNS, MIN_ROWS = 6, 2
 PER_ROW, CELL = 3, 2
+DOWN_ROWS = MAX_ROWS - 2  # the rows that say a machine could not be read
 UP = "runs.up"
 RUNS_TITLE = "runs.title"
 
@@ -69,7 +70,13 @@ def grid(runs, views):
     runs._runs, runs._turns, runs._projects = {}, {}, {}
     projects = runs.scan.projects if runs.scan else []
     # A machine that could not be read comes first, a row of its own.
-    cells = [down(row, name, *why) for row, (name, why) in enumerate(runs.down.items())]
+    # At most DOWN_ROWS of them, so a row of projects and the pager still fit.
+    downs = list(runs.down.items())
+    if len(downs) > DOWN_ROWS:
+        rest = downs[DOWN_ROWS - 1 :]
+        more = ("%d more machines not read" % len(rest), ", ".join(name for name, _ in rest))
+        downs = downs[: DOWN_ROWS - 1] + [("_more", more)]
+    cells = [down(row, name, *why) for row, (name, why) in enumerate(downs)]
     if not projects and not cells:
         return [note(runs)], MIN_ROWS
     top = len(cells)

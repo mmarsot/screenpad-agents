@@ -274,6 +274,29 @@ class RunsPageTests(unittest.TestCase):
         self.assertTrue(b.navigate("runs.up"))
         self.assertEqual(self.labels(b, f, projects=True), ["p9", "p10", "p11", "p12", "busy"])
 
+    def test_with_many_machines_down_a_row_of_projects_and_the_pager_still_fit(self):
+        # Three or four machines unreachable and more projects than a page: the
+        # bar's four rows hold one down row, one that counts the others, a row
+        # of three projects and the pager.
+        machines = ["m1", "m2", "m3", "m4"]
+        for down in (machines[:3], machines):
+            b = Runs(False, machines)
+            b.set_scan(scan([("/repos/p%d" % n, []) for n in range(7)]))
+            for name in down:
+                b.set_remote(name, None, "ssh: no route to host", True)
+            f = fleet()
+            page = self.accepted(b, f).pages["runs"]
+            self.assertEqual(page.rows, 4)
+            rows = {w.id: w for w in page.widgets}
+            self.assertEqual((rows["runs.down.m1"].row, rows["runs.down.m1"].look["label"]), (0, "m1 unreachable"))
+            more = next(w for w in page.widgets if w.row == 1)
+            self.assertEqual(more.look["label"], "%d more machines not read" % (len(down) - 1))
+            self.assertEqual(more.look["text"], ", ".join(down[1:]))
+            self.assertEqual(self.labels(b, f, projects=True), ["p0", "p1", "p2"])
+            self.assertEqual((rows["runs.span"].look["label"], rows["runs.next"].row), ("1-3 of 7", 3))
+            self.assertTrue(b.turn("runs.next"))
+            self.assertEqual(self.labels(b, f, projects=True), ["p3", "p4", "p5"])
+
     def test_a_project_starting_a_run_does_not_reshuffle_the_pages(self):
         projects = [("/repos/p%d" % n, []) for n in range(13)]
         b = self.board(projects)

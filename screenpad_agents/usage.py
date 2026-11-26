@@ -169,7 +169,7 @@ def _provider(name, raw):
 
 def _time(text):
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")) if text else None
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone() if text else None
     except (ValueError, AttributeError):
         return None
 

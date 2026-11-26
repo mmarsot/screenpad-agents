@@ -63,7 +63,7 @@ Under `systemd`, `quota-axi` is a script that needs `node` on its `PATH`, and th
 
 ## The apps page's four pages
 
-The touch bar takes at most **four pages** from an app. The app gives the Agents page, Captain's Call's (`calls`), the Projects page, the Runs page and the Limits page: with all five on, **Captain's Call's own page is left out** (the app logs it once). Its view is still the Captain's Call widget on the Agents page, and the `calls` tile still opens the decisions board.
+The touch bar takes at most **four pages** from an app. With firstmate the app gives Captain's Call's (`calls`), the Projects page, the Runs page and the Limits page, and **not the Agents page** unless `[herdr] agents_page = true` ([the Agents page](agents.md#the-agents-page)). With it and all four others on, five, **Captain's Call's own page is left out** (the app logs it once): its view is then the Captain's Call widget on the Agents page, and the `calls` tile still opens the decisions board.
 
 ## Troubleshooting
 
@@ -74,5 +74,5 @@ The touch bar takes at most **four pages** from an app. The app gives the Agents
 | A provider shows that I do not use | list the ones you use in `providers` |
 | A listed provider says `not reported by quota-axi` | its name is not one quota-axi knows: check `quota-axi --json` for the `provider` names |
 | The page is not in the bar | add `page = "limits"` to a `[[bar]]` block; the page is in the apps page's home list without it |
-| There is no Captain's Call page | the touch bar's four pages are used by the others (above); open Captain's Call from the Agents page |
+| There is no Captain's Call page | `[herdr] agents_page = true` and every other page on take the touch bar's four pages (above); open Captain's Call from the Agents page, or turn `agents_page` off |
 | Details opens nothing | the terminal command failed within 2 seconds (the app logs `the usage report did not open` and why); check `[usage] terminal` |

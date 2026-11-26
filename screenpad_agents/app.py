@@ -100,10 +100,12 @@ class App:
             remotes = build(config.runs, self._post, clock, ssh_run or subprocess.run)
             self.runs = RunsWatch(config.runs, nomistakes, config.home, self._post, clock, remotes=remotes, **opens)
         self.extras = Extras(config, firstmate, self._post, self.log, self._tell, clock, usage_run, usage_launcher)
-        # The touch bar takes MAX_PAGES pages from an app: with all of them
-        # on, Captain's Call's own page gives way (its widget is on the
-        # Agents page, and the calls tile opens its board).
-        given = 1 + (self.runs is not None) + self.extras.pages()
+        # The touch bar takes MAX_PAGES pages from an app. With firstmate the
+        # Agents page is given only with [herdr] agents_page, and then, with
+        # every other page on, Captain's Call's own page gives way (its
+        # widget is on the Agents page, and the calls tile opens its board).
+        self.fleet.agents_page = firstmate is None or config.agents_page
+        given = self.fleet.agents_page + (self.runs is not None) + self.extras.pages()
         self.fleet.calls_page = firstmate is None or given + 1 <= MAX_PAGES
         if firstmate is not None and not self.fleet.calls_page:
             self.log(
