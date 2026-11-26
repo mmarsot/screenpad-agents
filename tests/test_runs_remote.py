@@ -190,8 +190,8 @@ def fleet():
 
 
 class RemotePageTests(unittest.TestCase):
-    def board(self, local=True, remote=True, down=None, watch=("desktop",)):
-        board = Runs(False, ["desktop"], "laptop", watch)
+    def board(self, local=True, remote=True, down=None, watch=("desktop",), unreachable=True):
+        board = Runs(False, ["desktop"], watch)
         if local:
             board.set_scan(scan([(API, [run(2, "fm/fix", "running")])], [(COPY, "fm/fix", 2)]))
         if remote:
@@ -199,7 +199,7 @@ class RemotePageTests(unittest.TestCase):
             copy = Copy("/pool/1/api", "fm/remote-fix", run_id(5), "desktop", "fix-remote")
             board.set_remote("desktop", Scan([project], [copy]))
         if down:
-            board.set_remote("desktop", None, down)
+            board.set_remote("desktop", None, down, unreachable)
         return board
 
     @staticmethod
@@ -215,7 +215,7 @@ class RemotePageTests(unittest.TestCase):
         self.assertEqual(heads, ["laptop · 1 active", "desktop · 1 active"])
 
     def test_the_same_repo_path_on_both_machines_is_two_projects(self):
-        board = Runs(False, ["desktop"], "laptop")
+        board = Runs(False, ["desktop"])
         board.set_scan(scan([(API, [run(2, "fm/a", "running")])]))
         board.set_remote("desktop", Scan([Project(API, [run(5, "fm/b", "running")], machine="desktop")]))
         views = board.views(fleet())
@@ -244,6 +244,17 @@ class RemotePageTests(unittest.TestCase):
         board.set_remote("desktop", Scan([]))
         self.assertNotIn("runs.down.desktop", self.widgets(board))
 
+    def test_a_machine_that_answers_but_whose_no_mistakes_fails_is_not_called_unreachable(self):
+        why = "no-mistakes axi: sh: 1: no-mistakes: not found"
+        board = self.board(down=why, unreachable=False)
+        first = board.page(fleet(), board.views(fleet()))["widgets"][0]
+        self.assertEqual(
+            (first["id"], first["label"], first["text"]), ("runs.down.desktop", "desktop: no-mistakes unavailable", why)
+        )
+        self.assertNotIn("fix-remote", [w.get("label") for w in self.widgets(board).values()])
+        tile = board.tile(board.views(fleet()))
+        self.assertEqual(tile["text"], "1 active · desktop: no-mistakes unavailable")
+
     def test_with_nothing_read_but_the_notice_the_page_still_says_it(self):
         board = self.board(local=False, remote=False, down="ssh: nope")
         page = board.page(fleet(), board.views(fleet()))
@@ -266,7 +277,7 @@ class RemotePageTests(unittest.TestCase):
         self.assertNotIn(runcard.WATCH, self.widgets(no_watch))
 
     def test_the_machines_are_checked_against_the_one_warning_rule_separately(self):
-        board = Runs(False, ["desktop"], "laptop")
+        board = Runs(False, ["desktop"])
         board.set_scan(scan([(API, [run(2, "fm/a", "running")])], [(COPY, "fm/a", 2)]))
         same = Project(API, [run(5, "fm/a", "running")], machine="desktop")
         board.set_remote("desktop", Scan([same], [Copy(COPY, "fm/a", run_id(5), "desktop")]))
@@ -317,6 +328,14 @@ class RemoteLoopTests(Machine):
         self.assertEqual(rig.apps.provided()["runs"]["text"], "2 active")
         self.assertEqual(rig.logged, [])
 
+    def test_a_desktop_whose_no_mistakes_cannot_run_is_not_said_to_be_unreachable(self):
+        rig = self.rig(remote=self.remote(command=[os.path.join(self.dir, "no-such-no-mistakes")]))
+        rig.until(lambda: self.look(rig, "runs.down.desktop").get("label") == "desktop: no-mistakes unavailable")
+        self.assertIn("not found", self.look(rig, "runs.down.desktop")["text"])
+        self.assertEqual(rig.apps.provided()["runs"]["text"], "1 active · desktop: no-mistakes unavailable")
+        self.assertEqual(len(rig.logged), 1)
+        self.assertTrue(rig.logged[0].startswith("desktop: no-mistakes unavailable: "), rig.logged)
+
     def test_an_unreachable_desktop_is_said_on_the_page_and_logged_once(self):
         self.ssh.down = "ssh: connect to host desktop port 22: Connection refused"
         rig = self.rig()
@@ -327,7 +346,7 @@ class RemoteLoopTests(Machine):
         self.assertEqual(rig.apps.provided()["runs"]["text"], "1 active · desktop unreachable")
         self.assertEqual(self.text(rig, run_id(2)), "laptop · running · review")  # its own runs stay
         rig.until(lambda: len(self.ssh.calls) >= 3)
-        self.assertEqual(rig.logged, ["ssh: connect to host desktop port 22: Connection refused"])
+        self.assertEqual(rig.logged, ["desktop unreachable: ssh: connect to host desktop port 22: Connection refused"])
         self.ssh.down = None
         rig.until(lambda: self.text(rig, run_id(REMOTE_RUN)) == "desktop · running · review")
         self.assertEqual(self.look(rig, "runs.down.desktop"), {})
@@ -371,7 +390,7 @@ class RemoteLoopTests(Machine):
         script = os.path.join(self.dir, "viewer.py")
         with open(script, "w") as f:
             f.write("import sys\nprint(__name__, sys.argv[1:])\n")
-        terminal = ["term", "--title", "Watch {run} on {name}", "-x", "bash -c {command}"]
+        terminal = ["term", "--title", "Watch {run} on {name}", "-x", "bash -c {command}"]  # only {command} is filled
         rig = self.rig(remote=self.remote(terminal=terminal, script=script))
         rig.until(lambda: self.text(rig, run_id(REMOTE_RUN)) is not None)
         client = rig.client()
@@ -382,7 +401,7 @@ class RemoteLoopTests(Machine):
         rig.apps.press(client, "runs", runcard.WATCH, "tap")
         rig.until(lambda: self.launched)
         argv = self.launched[0]
-        self.assertEqual(argv[:3], ["term", "--title", "Watch %s on desktop" % run_id(REMOTE_RUN)])
+        self.assertEqual(argv[:3], ["term", "--title", "Watch {run} on {name}"])
         self.assertEqual(argv[3], "-x")
         outer = shlex.split(argv[4])
         self.assertEqual(outer[:2], ["bash", "-c"])
@@ -466,6 +485,13 @@ class ShowTests(Machine):
         out = show(self.ssh)
         self.assertIn("no-mistakes runs: no active run · desktop unreachable", out)
         self.assertIn("  desktop unreachable: ssh: connect to host desktop port 22: Connection refused", out)
+        self.ssh.down = None
+        missing = os.path.join(self.dir, "no-such-no-mistakes")
+        with open(path, "a") as f:
+            f.write('command = "%s"\n' % missing)
+        out = show(self.ssh)
+        self.assertIn("no-mistakes runs: no active run · desktop: no-mistakes unavailable", out)
+        self.assertFalse([line for line in out if "unreachable" in line])
 
 
 class BuildTests(Machine):

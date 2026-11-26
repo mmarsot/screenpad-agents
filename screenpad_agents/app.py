@@ -62,6 +62,7 @@ from .fleet import CALLS_WIDGET, Fleet
 from .herdr import HerdrError
 from .remotewatch import build
 from .reviewrequest import Reviews
+from .runs import down_notice
 from .runwatch import RunsWatch
 from .screen import guarded_send, read_screen
 
@@ -277,7 +278,8 @@ class App:
             if what == "runs":
                 self._tell("no-mistakes", rest[1])
             elif what == "remote":
-                self._tell(rest[0], rest[2])
+                name, _, error, unreachable = rest
+                self._tell(name, "%s: %s" % (down_notice(name, unreachable), error) if error else None)
             elif what == "opened":
                 _, url, error = rest
                 self.log("PR %s not opened: %s" % (url, error) if error else "opened PR %s" % url)

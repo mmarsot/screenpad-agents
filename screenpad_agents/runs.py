@@ -38,18 +38,25 @@ from .runmodel import widget_id as widget_id
 COLUMNS = 5
 MIN_ROWS = 2
 RUN_CELLS = COLUMNS - 1
+LOCAL = "laptop"  # this machine's label, once there is a remote
+
+
+def down_notice(name, unreachable):
+    """What the page says of a remote machine that could not be read: ssh
+    could not reach it, or it answered and its no-mistakes failed."""
+    return "%s unreachable" % name if unreachable else "%s: no-mistakes unavailable" % name
 
 
 class Runs:
     """What the Runs page last knew: the Scan (or why there is none), and
     the run whose card is open. With remote machines (machines: their
-    names; local: this one's) the scan is this machine's and theirs
-    together, every run labelled with its machine, and a machine that could
-    not be read is a notice in place of its projects (down, why)."""
+    names) the scan is this machine's (LOCAL) and theirs together, every
+    run labelled with its machine, and a machine that could not be read is
+    a notice in place of its projects (down: {name: (notice, why)})."""
 
-    def __init__(self, watch=False, machines=(), local="laptop", can_watch=()):
+    def __init__(self, watch=False, machines=(), can_watch=()):
         self.watch = watch  # [runs] watch_command is set: cards get Watch
-        self.machines, self.local, self.can_watch = list(machines), local, set(can_watch)
+        self.machines, self.can_watch = list(machines), set(can_watch)
         self.scan = None
         self.error = None
         self.card = None
@@ -67,12 +74,13 @@ class Runs:
         self._mine, self.error = scan, None
         self._merge()
 
-    def set_remote(self, name, scan, error=None):
-        """A remote machine's read, or why it could not be reached: then its
-        runs are gone from the page, and a notice says so."""
+    def set_remote(self, name, scan, error=None, unreachable=False):
+        """A remote machine's read, or why it could not be read (unreachable:
+        it could not be reached at all): then its runs are gone from the
+        page, and a notice says so."""
         if error:
             self._theirs.pop(name, None)
-            self.down[name] = error
+            self.down[name] = (down_notice(name, unreachable), error)
         else:
             self._theirs[name] = scan
             self.down.pop(name, None)
@@ -102,7 +110,7 @@ class Runs:
     def label(self, project):
         """What the page calls the machine of project: nothing until there
         are remote machines."""
-        return (project.machine or self.local) if self.machines else None
+        return (project.machine or LOCAL) if self.machines else None
 
     def find(self, run_id):
         for p in self.scan.projects if self.scan else []:
@@ -272,7 +280,7 @@ class Runs:
     def summary(self, views):
         if self.scan is None:
             if self.down:
-                return " · ".join("%s unreachable" % n for n in self.down)
+                return " · ".join(n for n, _ in self.down.values())
             return "no-mistakes unavailable" if self.error else "reading no-mistakes…"
         active, attention, duplicate = self.counts(views)
         parts = ["%d active" % active if active else "no active run"]
@@ -280,7 +288,7 @@ class Runs:
             parts.append("%d need%s you" % (attention, "s" if attention == 1 else ""))
         if duplicate:
             parts.append("%d on one agent" % duplicate)
-        return " · ".join(parts + ["%s unreachable" % n for n in self.down])
+        return " · ".join(parts + [n for n, _ in self.down.values()])
 
     def tone(self, views):
         active, attention, duplicate = self.counts(views)
@@ -297,7 +305,7 @@ class Runs:
             text = "%d active" % active if active else "none active"
             if attention:
                 text += " · %d need%s you" % (attention, "s" if attention == 1 else "")
-            text = " · ".join([text] + ["%s unreachable" % n for n in self.down])
+            text = " · ".join([text] + [n for n, _ in self.down.values()])
             msg["text"] = clip(text, MAX_TILE_TEXT)
             msg["icon"] = icon(LIGHTHOUSE)
         if attention:
@@ -335,7 +343,7 @@ class Runs:
         self._runs = {}
         projects = self.scan.projects if self.scan else []
         # A machine that could not be read comes first, a row of its own.
-        top = [self._unreachable(row, name, why) for row, (name, why) in enumerate(self.down.items())]
+        top = [self._down(row, name, *down) for row, (name, down) in enumerate(self.down.items())]
         if not projects and not top:
             return [self._note()], MIN_ROWS
         room = MAX_ROWS - len(top)
@@ -357,11 +365,11 @@ class Runs:
             cells.append(dict(more, label="+%d more projects" % hidden))
         return cells, rows
 
-    def _unreachable(self, row, name, why):
+    def _down(self, row, name, notice, why):
         """The row that says a remote machine could not be read, and why:
         its runs are not on the page, so it never looks like it has none."""
         cell = {"id": widget_id("runs.down.", name), "col": 0, "row": row, "cols": COLUMNS, "touch": "none"}
-        return [dict(cell, label=clip("%s unreachable" % name, MAX_LABEL), text=clip(why, MAX_TEXT), tone="reject")]
+        return [dict(cell, label=clip(notice, MAX_LABEL), text=clip(why, MAX_TEXT), tone="reject")]
 
     def _row(self, row, project, views):
         head = {"id": widget_id("proj.", hashlib.sha256(project.key.encode()).hexdigest()[:16]), "touch": "none"}

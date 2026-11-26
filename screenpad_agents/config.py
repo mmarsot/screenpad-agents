@@ -36,8 +36,6 @@ ConfigError naming it.
                                # optional, or a list: opens a live view of a
                                # run ({run} is the run id), for its card's
                                # Watch button
-  machine = "laptop"           # what this machine is called on the page,
-                               # once there is a remote
   [[runs.remote]]              # optional, repeatable: another machine whose
                                # runs the Runs page shows too, read over ssh
   name = "desktop"             # its label on the page
@@ -122,12 +120,11 @@ class Runs:
     intervals, and the command that opens a live view of a run (watch,
     with its {run} word; None: no Watch button)."""
 
-    __slots__ = ("command", "firstmate", "idle", "machine", "poll", "remotes", "repos", "watch")
+    __slots__ = ("command", "firstmate", "idle", "poll", "remotes", "repos", "watch")
 
     def __init__(self, repos=(), firstmate=False, command=("no-mistakes",), poll=RUNS_POLL, idle=RUNS_IDLE, watch=None):
         self.repos, self.firstmate, self.command = list(repos), firstmate, list(command)
         self.poll, self.idle, self.watch = poll, idle, list(watch) if watch else None
-        self.machine = "laptop"  # this machine's label, shown once there is a remote
         self.remotes: list = []
 
 
@@ -203,7 +200,7 @@ def _review(path, value):
 
 
 def _runs(path, table, firstmate):
-    keys = {"repos", "firstmate", "command", "poll", "idle", "watch_command", "machine", "remote"}
+    keys = {"repos", "firstmate", "command", "poll", "idle", "watch_command", "remote"}
     _known(path, table, keys, "key in [runs]")
     repos = table.get("repos", [])
     if not isinstance(repos, list) or not all(isinstance(r, str) and os.path.isabs(r) for r in repos):
@@ -216,9 +213,6 @@ def _runs(path, table, firstmate):
         raise ConfigError("%s: [runs] firstmate must be true or false" % path)
     discover = discover and firstmate
     remotes = _remotes(path, table.get("remote", []))
-    machine = table.get("machine", "laptop")
-    if not isinstance(machine, str) or not MACHINE.fullmatch(machine) or machine in {r.name for r in remotes}:
-        raise ConfigError("%s: [runs] machine must be a short name that no remote has" % path)
     if not repos and not discover and not remotes:
         raise ConfigError("%s: [runs] has no repos, and no [firstmate] to find projects in" % path)
     command = _command(path, table.get("command", "no-mistakes"), "[runs] command", "no-mistakes")
@@ -232,7 +226,7 @@ def _runs(path, table, firstmate):
         if not any(RUN_PLACEHOLDER in word for word in watch):
             raise ConfigError("%s: [runs] watch_command must hold {run}, where the run id goes" % path)
     runs = Runs(list(dict.fromkeys(os.path.normpath(r) for r in repos)), discover, command, poll, idle, watch)
-    runs.machine, runs.remotes = machine, remotes
+    runs.remotes = remotes
     return runs
 
 

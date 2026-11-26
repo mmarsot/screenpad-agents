@@ -280,7 +280,6 @@ class RemoteConfigTests(unittest.TestCase):
         r = runs.remotes[0]
         self.assertEqual((r.name, r.ssh, r.home, r.code, r.repos), ("desktop", "desktop", None, None, ["/srv/api"]))
         self.assertEqual((r.command, r.terminal, r.watch_script), (["no-mistakes"], None, None))
-        self.assertEqual(runs.machine, "laptop")
 
     def test_every_setting(self):
         r = self.remote(
@@ -295,7 +294,8 @@ class RemoteConfigTests(unittest.TestCase):
         )
         self.assertEqual((r.terminal, r.watch_script), (["term", "-x", "bash -c {command}"], self.script))
         self.assertEqual(self.remote().code, "/home/m/fm")  # the checkout is the home by default
-        self.assertEqual(self.runs(machine="desk", remote=[{"name": "n", "ssh": "h", "home": "/h"}]).machine, "desk")
+        with self.assertRaisesRegex(ConfigError, "unknown key in \\[runs\\] 'machine'"):
+            self.runs(machine="desk", remote=[{"name": "n", "ssh": "h", "home": "/h"}])
 
     def test_errors(self):
         bad: list[tuple[dict, str]] = [
@@ -325,8 +325,6 @@ class RemoteConfigTests(unittest.TestCase):
         two = [{"name": "d", "ssh": "d", "home": "/h"}] * 2
         with self.assertRaisesRegex(ConfigError, "two .* are named d"):
             self.runs(remote=two)
-        with self.assertRaisesRegex(ConfigError, "machine must be a short name that no remote has"):
-            self.runs(machine="d", remote=two[:1])
         with self.assertRaisesRegex(ConfigError, "array of tables"):
             self.runs(remote={"name": "d"})
 

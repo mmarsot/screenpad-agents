@@ -3,7 +3,8 @@
 Each thread reads its machine over ssh (ssh.py) off every other thread, so a
 slow or dead machine delays nothing here: it reads the machine's projects
 and runs the way runwatch.py reads this one (runscan.py), hands each Scan
-(or why there is none: "unreachable") to the app's queue as a "remote"
+(or why there is none: "unreachable" when ssh cannot connect,
+"no-mistakes unavailable" when the machine answered but no-mistakes failed) to the app's queue as a "remote"
 result, and, while a run of that machine has its card open, that run in
 detail (and its steps' findings), like the local thread.
 
@@ -22,7 +23,6 @@ changed on the machine, and the viewer only reads.
 import base64
 import os
 import queue
-import re
 import shlex
 import subprocess
 import time
@@ -31,7 +31,7 @@ from . import desktop, ssh
 from .common import FIRSTMATE_POLL, REMOTE_CONNECT, why
 from .config import COMMAND_PLACEHOLDER
 from .firstmate import FirstmateError
-from .nomistakes import RUN_ID, NoMistakesError
+from .nomistakes import RUN_ID, NoMistakesError, Unreachable
 from .runscan import read
 
 # The viewer's source arrives as an argument; it is run as __main__ with the
@@ -80,9 +80,9 @@ class RemoteWatch:
             try:
                 scan = self.scan()
                 active = scan.active()
-                self.post("remote", self.name, scan, None)
+                self.post("remote", self.name, scan, None, False)
             except Exception as e:
-                self.post("remote", self.name, None, why(e, NoMistakesError))
+                self.post("remote", self.name, None, why(e, NoMistakesError), isinstance(e, Unreachable))
             if watching is not None:
                 self._read_card(watching)
             due = self.clock() + (self.settings.poll if active else self.settings.idle)
@@ -149,8 +149,7 @@ class RemoteWatch:
         there = "python3 -I -c %s %s %s" % (shlex.quote(RUNNER), shlex.quote(source), shlex.quote(run_id))
         options = "-t -o BatchMode=yes -o ConnectTimeout=%d" % REMOTE_CONNECT
         line = "ssh %s -- %s %s; echo; %s" % (options, shlex.quote(r.ssh), shlex.quote(there), KEY)
-        words = {COMMAND_PLACEHOLDER: shlex.quote(line), "{run}": run_id, "{name}": self.name}
-        return [re.sub(r"\{(?:command|run|name)\}", lambda m: words[m.group()], word) for word in r.terminal]
+        return [word.replace(COMMAND_PLACEHOLDER, shlex.quote(line)) for word in r.terminal]
 
 
 def build(settings, post, clock=time.monotonic, run=subprocess.run):

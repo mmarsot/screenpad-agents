@@ -41,7 +41,6 @@ tile = "runs"
 | `[runs] poll` | seconds between two reads while a run is active, 10 to 300, default 20 |
 | `[runs] watch_command` | optional: the command that opens a live view of a run, as a string (split into words as a shell would, quotes allowed, but no shell runs it) or a list of words, with `{run}` in it where the run's id goes, for example `"/path/to/watch-run {run}"`. Without it a run's card has no [Watch](#watching-a-run) |
 | `[runs] idle` | seconds between two reads while none is, 30 to 3600 and at least `poll`, default 120 |
-| `[runs] machine` | what this machine is called on the page once there is a remote, `"laptop"` by default; nothing is labelled while there is none |
 | `[[runs.remote]]` | optional, repeatable: another machine whose runs the page shows too, read over ssh; see [A remote machine](#a-remote-machine) |
 
 Without `[runs]` there is no Runs page and no `runs` tile, and no-mistakes is never run.
@@ -52,33 +51,32 @@ The page reads the machine it runs on. Add a `[[runs.remote]]` table for each ot
 
 ```toml
 [runs]
-machine = "laptop"                           # what this machine is called; the default
 
 [[runs.remote]]
 name = "desktop"                             # its label on the page
 ssh = "desktop"                              # the ssh target: an alias of ~/.ssh/config, or user@host
 home = "/home/you/fm-homes/desktop"          # its firstmate home, to find its projects and tasks
 repos = []                                   # repo directories there to watch, besides firstmate's
-terminal = ["ptyxis", "--new-window", "-T", "Watch: {run} on {name}", "-x", "bash -c {command}"]
+terminal = ["ptyxis", "--new-window", "-x", "bash -c {command}"]
 watch_script = "/home/you/code/nm-watch.py"  # the viewer Watch runs there (a file here, sent over ssh)
 ```
 
 | Setting | Meaning |
 |---|---|
-| `name` | the machine's label, up to 20 letters, digits, `_` and `-`; different from `[runs] machine` and the other remotes' |
+| `name` | the machine's label, up to 20 letters, digits, `_` and `-`; different from the other remotes'. This machine is labelled `laptop` |
 | `ssh` | the ssh target; `ssh` is run with `BatchMode=yes` (it never asks for a password or a passphrase: key authentication must work unattended) and a 4 second connect timeout |
 | `home` | the machine's firstmate home, an absolute path there: its registered clones (the directories in `<home>/projects/`) and its live tasks' worktrees (its own reader, below) are watched, like this machine's with `[runs] firstmate` |
 | `code` | the machine's firstmate checkout with `bin/fm-bearings-snapshot.sh`, `home` by default |
 | `repos` | repo directories on the machine to watch, `[]` by default; `home` or `repos` is needed |
 | `command` | the no-mistakes program there, `"no-mistakes"` by default, as a string or a list of words |
-| `terminal` | the words of a terminal window opened here for Watch, with `{command}` in one of them (replaced by the line to run in it, quoted), and `{run}` and `{name}` where the run's id and the machine's name go |
+| `terminal` | the words of a terminal window opened here for Watch, with `{command}` in one of them (replaced by the line to run in it, quoted); no other word is changed |
 | `watch_script` | a script here, by absolute path, that is the live view: it is sent to the machine and run there with the run's id, and only reads. `terminal` and `watch_script` go together; without them a remote run's card has no Watch |
 
 What it does for each remote machine:
 
 - **Reads** run in a thread of the machine's own, so a slow or dead machine never delays this machine's runs or a touch. The page asks the same read-only commands as here ([How it reads](#how-it-reads)), each over `ssh <target> 'cd <dir> && no-mistakes axi …'`, sharing one ssh connection (`ControlMaster`, kept 60 seconds in `$XDG_RUNTIME_DIR`). The machine is read as often as this one: every `[runs] poll` seconds while one of its runs is active, `idle` otherwise, and not while the touch bar is disconnected. Its firstmate's reader is run over ssh at most once a minute, and its projects directory listed with each read.
 - **Labels** every run with its machine: a run's cell reads `desktop · running · review`, a project's widget `desktop · 1 active`, a card's first line starts with the machine, and this machine's runs say `laptop` the same way. Two machines' projects are separate even when their paths are the same, and the warning for more than one active run is checked per machine.
-- **Says when the machine cannot be reached**: when ssh cannot connect or authenticate, or the machine answers nothing within 12 seconds, a red row `desktop unreachable` with ssh's own message (`ssh: connect to host desktop port 22: Connection timed out`) is the page's first row, the tile says `desktop unreachable` beside its count and turns amber, and the machine's runs leave the page, so a missing desktop never looks like a desktop with nothing running. The journal logs it once, and `desktop answers again` when it recovers. A failing ssh is found by its first call, within the connect timeout, not by one call per project.
+- **Says when the machine cannot be reached**: when ssh cannot connect or authenticate, or the machine answers nothing within 12 seconds, a red row `desktop unreachable` with ssh's own message (`ssh: connect to host desktop port 22: Connection timed out`) is the page's first row, the tile says `desktop unreachable` beside its count and turns amber, and the machine's runs leave the page, so a missing desktop never looks like a desktop with nothing running. The journal logs it once (`desktop unreachable: ` and ssh's message), and `desktop answers again` when it recovers. A failing ssh is found by its first call, within the connect timeout, not by one call per project. When ssh connects but no-mistakes fails there for every project (it is not on the `PATH` of a non-interactive ssh shell, say, so the shell says `not found`), the row, tile and journal say `desktop: no-mistakes unavailable` with the error instead, and the machine's runs leave the page the same way.
 - **Opens** a remote run's pull request from its card with the run's URL, like any run. Its card has no Review, Approve or Changes (those are for this machine's firstmate tasks) and its Focus says `runs on desktop`: the agents are not in this machine's Herdr.
 - **Watch** on a remote run's card opens a new window of `terminal` here that runs `ssh -t <target>` and, there, `python3 -I` on the viewer `watch_script` (its source is sent in the command, so nothing is installed or changed on the machine), with the run's id, then waits for a key before closing. It reads only. The same `terminal` and `watch_script` words as [Watch](#watching-a-run) otherwise: started detached in a scope of its own and not waited for beyond 2 seconds.
 
@@ -194,7 +192,8 @@ Each call takes about 30 ms. They run in a thread of their own, off the app's lo
 | A run shows without its agent or task | no repo copy the app knows has the run's branch checked out, or no Herdr agent's `cwd` is that copy; `screenpad-agents show` lists each run with its pane |
 | A run's card has no **Review**, **Approve** or **Changes** | it is not the newest run of its branch, it has not ended green, it has no GitHub pull request, no firstmate task is joined to it, or (for Review and Changes) `[firstmate] review_command` is not set; see [A ready pull request](#a-ready-pull-request) |
 | A run's card has no **Watch** | `[runs] watch_command` is not set (for a remote machine's run: its `terminal` and `watch_script` are) |
-| **desktop unreachable** (a remote machine's name) | ssh said why on the row. Does `ssh <target> true` work from this session without a prompt (`BatchMode`: a key, no passphrase asked; a host key already trusted)? Is the machine up, and its name or Tailscale address right? The unit's ssh uses your `~/.ssh/config`, not a terminal's agent unless `SSH_AUTH_SOCK` is set for it |
+| **desktop unreachable** (a remote machine's name) | ssh could not connect, or the machine answered nothing in time; ssh said why on the row. Does `ssh <target> true` work from this session without a prompt (`BatchMode`: a key, no passphrase asked; a host key already trusted)? Is the machine up, and its name or Tailscale address right? The unit's ssh uses your `~/.ssh/config`, not a terminal's agent unless `SSH_AUTH_SOCK` is set for it |
+| **desktop: no-mistakes unavailable** | ssh reached the machine, but no-mistakes failed there; its message is on the row. A non-interactive ssh shell often lacks `~/.local/bin` or `~/go/bin` on its `PATH` (Ubuntu's `~/.bashrc` returns early for one): set the remote's `command` to no-mistakes' absolute path there, and check `ssh <target> 'cd <repo> && no-mistakes axi'` |
 | A remote machine shows but its tasks' runs have no task name | its firstmate reader failed (`FM_HOME` or `code` wrong there): the projects and runs still show; `screenpad-agents show` prints the runs it read |
 | Watch on a remote run opens a window that closes at once or says an error | the window runs `ssh -t` first: read what it printed before closing; `python3` must exist on the machine, and the viewer is read from `watch_script` here when Watch is tapped |
 | **Watch** says **not opened** | the button says why: `systemd-run` missing, or the command exited non-zero within 2 seconds (its message is in the journal) |

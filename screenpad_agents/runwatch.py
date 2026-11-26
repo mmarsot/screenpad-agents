@@ -67,7 +67,7 @@ class RunsWatch:
         self.opener, self.launcher = opener, launcher
         self.remotes = dict(remotes or {})  # the remote machines' threads, by name (remotewatch.py)
         can = {n for n, r in self.remotes.items() if r.can_watch}
-        self.board = model.Runs(bool(settings.watch), list(self.remotes), settings.machine, can)
+        self.board = model.Runs(bool(settings.watch), list(self.remotes), can)
         self._jobs: queue.Queue = queue.Queue()
         self._places = None
         self._showing = False

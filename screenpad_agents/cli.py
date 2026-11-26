@@ -12,7 +12,7 @@ from .config import load
 from .firstmate import Firstmate, FirstmateError
 from .fleet import Fleet
 from .herdr import Herdr, HerdrError
-from .nomistakes import NoMistakes, NoMistakesError
+from .nomistakes import NoMistakes, NoMistakesError, Unreachable
 from .remotewatch import build
 from .runwatch import RunsWatch
 
@@ -74,7 +74,7 @@ def cmd_show(args, ssh_run=subprocess.run):
             try:
                 watch.board.set_remote(name, remote.scan())
             except NoMistakesError as e:
-                watch.board.set_remote(name, None, str(e))
+                watch.board.set_remote(name, None, str(e), isinstance(e, Unreachable))
     if args.json:
         print(json.dumps(fleet.messages() + (watch.board.messages(fleet) if watch else []), indent=2))
         return 0
@@ -99,8 +99,8 @@ def show_runs(board, fleet):
     print("no-mistakes runs: %s" % board.summary(views))
     if board.error:
         print("  " + board.error)
-    for name, why in board.down.items():
-        print("  %s unreachable: %s" % (name, why))
+    for notice, why in board.down.values():
+        print("  %s: %s" % (notice, why))
     for p in board.scan.projects if board.scan else []:
         where = "%s: " % board.label(p) if board.machines else ""
         print("  %s%s (%s)%s" % (where, p.name, p.repo, ": " + p.error if p.error else ""))
