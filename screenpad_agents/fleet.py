@@ -77,6 +77,7 @@ class Fleet:
         self.firstmate_error = None
         self.card = None
         self.calls_open = False  # Captain's Call's view in place of the grid
+        self.calls_page = True  # the apps page's own page for it (the bar limits an app's pages)
         self.board = callpage.Board()  # the decisions board's state (boardrequest.py)
         self.reviews = None  # the changes ready for review (reviewrequest.py)
         self._panes = {}
@@ -176,7 +177,7 @@ class Fleet:
         if not self.firstmate:
             return [self.page(), self.fleet_tile()]
         calls = callpage.page(self.bearings, self.firstmate_error, self.board, self.reviews)
-        return [self.page(), calls, self.fleet_tile(), self.calls_tile(), self.bearings_tile()]
+        return [self.page()] + [calls] * self.calls_page + [self.fleet_tile(), self.calls_tile(), self.bearings_tile()]
 
     def summary(self):
         if self.herdr_error:

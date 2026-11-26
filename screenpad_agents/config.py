@@ -25,12 +25,15 @@ ConfigError naming it.
                                # optional, or a list: opens a change ready
                                # for review ({task} is the task id)
 
-  [usage]                      # optional: the usage-limits tile
+  [usage]                      # optional: the usage-limits tile and page
   command = "quota-axi"        # or a list: a wrapper and its arguments
   poll = 60                    # seconds between two runs, at least 60
+  providers = ["claude"]       # the providers that count (default: every one
+                               # quota-axi can read); the others are ignored
   terminal = ["ptyxis", "--new-window", "-x", "bash -c {command}"]
                                # a terminal window; {command} is what to run
-                               # in it: the tile's tap opens `command --full`
+                               # in it: Details opens firstmate's usage viewer
+                               # (data/tools/usage-view.py), else `command --full`
 
   [runs]                       # optional: the Runs page (no-mistakes runs)
   repos = ["/path/to/repo"]    # repo directories to watch
@@ -84,6 +87,7 @@ MACHINE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,19}")
 SSH_TARGET = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.@:-]{0,127}")
 COMMAND_PLACEHOLDER = "{command}"
 
+PROVIDER = re.compile(r"[a-z0-9][a-z0-9_.-]{0,31}")
 SESSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 BEARINGS = os.path.join("bin", "fm-bearings-snapshot.sh")
 CONTROL = os.path.join("bin", "fm-control.sh")
@@ -127,14 +131,15 @@ class Config:
 
 
 class Usage:
-    """[usage]: quota-axi's command, the seconds between two runs of it, and
-    the terminal window the tile's tap opens its full report in ({command}
-    is the line to run in it)."""
+    """[usage]: quota-axi's command, the seconds between two runs of it, the
+    terminal window Details opens its viewer in ({command} is the line to run
+    in it) and the providers that count (None: every one quota-axi can read)."""
 
-    __slots__ = ("command", "poll", "terminal")
+    __slots__ = ("command", "poll", "providers", "terminal")
 
-    def __init__(self, command=("quota-axi",), poll=USAGE_POLL, terminal=TERMINAL):
+    def __init__(self, command=("quota-axi",), poll=USAGE_POLL, terminal=TERMINAL, providers=None):
         self.command, self.poll, self.terminal = list(command), poll, list(terminal)
+        self.providers = list(providers) if providers is not None else None
 
 
 class Runs:
@@ -219,13 +224,22 @@ def parse(path, data):
 
 
 def _usage(path, table):
-    _known(path, table, {"command", "poll", "terminal"}, "key in [usage]")
+    _known(path, table, {"command", "poll", "terminal", "providers"}, "key in [usage]")
     command = _command(path, table.get("command", "quota-axi"), "[usage] command", "quota-axi")
     poll = _seconds(path, table, "usage", USAGE_POLL, USAGE_POLL_RANGE)
     terminal = _command(path, table.get("terminal", TERMINAL), "[usage] terminal", "ptyxis")
     if not any(COMMAND_PLACEHOLDER in word for word in terminal):
         raise ConfigError("%s: [usage] terminal must hold {command}, where the report's line goes" % path)
-    return Usage(command, poll, terminal)
+    providers = table.get("providers")
+    if providers is not None:
+        names = providers if isinstance(providers, list) else None
+        if not names or not all(isinstance(n, str) and PROVIDER.fullmatch(n) for n in names):
+            raise ConfigError(
+                '%s: [usage] providers must be a list of provider names such as ["claude"]'
+                " (lower case letters, digits, -, _ or .)" % path
+            )
+        providers = list(dict.fromkeys(names))
+    return Usage(command, poll, terminal, providers)
 
 
 def _review(path, value):

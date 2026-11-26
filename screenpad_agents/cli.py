@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 
+from . import usagepage
 from .app import App
 from .common import AgentsError, config_path, socket_path
 from .config import load
@@ -81,7 +82,7 @@ def cmd_show(args, ssh_run=subprocess.run):
                 watch.board.set_remote(name, None, str(e), isinstance(e, Unreachable))
     projects, usage = show_projects(config), show_usage(config)
     if args.json:
-        extras = (projects.messages() if projects else []) + ([usage.tile()] if usage else [])
+        extras = (projects.messages() if projects else []) + ([usage.tile(), usagepage.page(usage)] if usage else [])
         print(json.dumps(fleet.messages() + (watch.board.messages(fleet) if watch else []) + extras, indent=2))
         return 0
     print("Herdr session %s: %s" % (config.session, fleet.summary()))
@@ -105,6 +106,11 @@ def cmd_show(args, ssh_run=subprocess.run):
     if usage is not None:
         tile = usage.tile()
         print("Usage: %s | %s" % (tile["label"], tile["text"]))
+        for p in usage.providers or []:
+            for w in p.windows:
+                print("  %-8s %-16s %3d%% left" % (p.name, w.name, round(w.percent)))
+            if not p.windows:
+                print("  %-8s no data: %s" % (p.name, p.reason))
     return 1 if fleet.herdr_error else 0
 
 
@@ -123,7 +129,7 @@ def show_usage(config):
         return None
     tile = Usage()
     try:
-        tile.set(UsageWatch(config.usage, None).read())
+        tile.set(UsageWatch(config.usage, None, home=config.home).read())
     except UsageError as e:
         tile.set(None, str(e))
     return tile
