@@ -41,8 +41,26 @@ class ProjectsLoopTests(unittest.TestCase):
     def tap(self, rig, widget):
         rig.apps.press(rig.client(), "projects", widget, "tap")
 
+    def label(self, rig, label):
+        return next(w for w, x in self.widgets(rig).items() if x.look.get("label") == label)
+
     def refine(self, rig):
-        return next(w for w, x in self.widgets(rig).items() if x.row == 0 and x.look.get("label") == "Refine")
+        return self.label(rig, "Refine")
+
+    def open_project(self, rig, name):
+        self.tap(rig, self.label(rig, name))
+        rig.until(lambda: "pj.back" in self.widgets(rig))
+
+    def back(self, rig):
+        self.tap(rig, "pj.back")
+        rig.until(lambda: "pj.back" not in self.widgets(rig))
+
+    def stage(self, rig, name, preset, badge):
+        """Open a project from the list, tap a preset, come back to the list."""
+        self.open_project(rig, name)
+        self.tap(rig, self.label(rig, preset))
+        rig.until(lambda: rig.apps.pages["projects"].look.get("badge") == badge)
+        self.back(rig)
 
     def files(self, rig):
         data = os.path.join(rig.app.config.home, "data")
@@ -61,22 +79,19 @@ class ProjectsLoopTests(unittest.TestCase):
         labels = [w.look.get("label") for w in page.widgets]
         self.assertEqual(
             labels,
-            ["api", "Iterate", "Refine", "Settings", "site", "Iterate", "Refine", "Settings", "Discard", "Validate"],
+            ["api", "site", "Discard", "Validate"],
         )
-        self.assertEqual(self.widgets(rig)[self.refine(rig)].touch, "tap")
+        self.assertEqual([self.widgets(rig)[self.label(rig, n)].touch for n in ("api", "site")], ["tap", "tap"])
         self.assertEqual(rig.logged, [])
 
     def test_taps_stage_a_draft_and_validate_sends_one_note_for_every_change(self):
         rig = self.rig()
         before = self.files(rig)
-        self.tap(rig, self.refine(rig))
-        rig.until(lambda: rig.apps.pages["projects"].look.get("badge") == "1")
+        self.stage(rig, "api", "Refine", "1")
         # Staged, not sent: nothing reaches firstmate until Validate.
         rig.turn(10)
         self.assertEqual(self.firstmate.notes, [])
-        site_iterate = next(w for w, x in self.widgets(rig).items() if x.row == 1 and x.look.get("label") == "Iterate")
-        self.tap(rig, site_iterate)
-        rig.until(lambda: rig.apps.pages["projects"].look.get("badge") == "2")
+        self.stage(rig, "site", "Iterate", "2")
         self.assertEqual(rig.apps.pages["projects"].look["text"], "2 projects · 2 to validate")
         self.tap(rig, "pj.validate")
         rig.until(lambda: len(self.firstmate.notes) == 1)
@@ -93,6 +108,7 @@ class ProjectsLoopTests(unittest.TestCase):
         self.write(rig, "projects.md", model_registry(yolo=False))
         self.write(rig, "project-settings.toml", '[projects.api]\npreset = "refine"\n')
         rig.until(lambda: rig.apps.pages["projects"].look["text"] == "2 projects · 1 asked")
+        self.open_project(rig, "api")
         self.assertEqual(self.widgets(rig)[self.refine(rig)].look["tone"], "accept")
         # The app wrote neither file: only the test did.
         self.assertEqual(sorted(self.files(rig)), ["project-settings.toml", "projects.md"])
@@ -100,8 +116,7 @@ class ProjectsLoopTests(unittest.TestCase):
 
     def test_discard_sends_nothing(self):
         rig = self.rig()
-        self.tap(rig, self.refine(rig))
-        rig.until(lambda: rig.apps.pages["projects"].look.get("badge") == "1")
+        self.stage(rig, "api", "Refine", "1")
         self.tap(rig, "pj.discard")
         rig.until(lambda: "badge" not in rig.apps.pages["projects"].look)
         self.tap(rig, "pj.validate")
@@ -110,9 +125,7 @@ class ProjectsLoopTests(unittest.TestCase):
 
     def test_a_single_setting_is_staged_from_the_project_s_view(self):
         rig = self.rig()
-        settings = next(w for w, x in self.widgets(rig).items() if x.look.get("label") == "Settings")
-        self.tap(rig, settings)
-        rig.until(lambda: "pj.back" in self.widgets(rig))
+        self.open_project(rig, "api")
         self.tap(rig, "pj.auto_.off")
         rig.until(lambda: getattr(self.widgets(rig).get("pj.auto_.on"), "look", {}).get("text") == "On → Off, draft")
         self.assertEqual(self.firstmate.notes, [])
@@ -124,8 +137,7 @@ class ProjectsLoopTests(unittest.TestCase):
     def test_a_note_that_fails_is_logged_shown_and_the_draft_is_kept(self):
         self.firstmate.request_error = "fm-inbox.sh note failed: exit 1"
         rig = self.rig()
-        self.tap(rig, self.refine(rig))
-        rig.until(lambda: rig.apps.pages["projects"].look.get("badge") == "1")
+        self.stage(rig, "api", "Refine", "1")
         self.tap(rig, "pj.validate")
         rig.until(lambda: any(line.startswith("firstmate was not told") for line in rig.logged))
         # Back to a draft, not pending: the captain can validate again.

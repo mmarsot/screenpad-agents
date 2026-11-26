@@ -209,7 +209,7 @@ class RunsWatch:
 
     def touch(self, widget, touch, fleet):
         """A touch on the Runs page: (the page changed, a pane to focus).
-        A tap on a run opens its card; Open PR on the card opens its pull
+        A tap on a project opens its runs, one on a run its card; Open PR on the card opens its pull
         request."""
         if touch != "tap":
             return False, None
@@ -224,7 +224,7 @@ class RunsWatch:
             if widget == WATCH:
                 return self._watch(), None
             return False, board.card_pane(fleet) if widget == FOCUS else None
-        if board.turn(widget):
+        if board.navigate(widget):
             return True, None
         run_id = board.run_of(widget)
         if run_id is not None and board.open_card(run_id) is not None:

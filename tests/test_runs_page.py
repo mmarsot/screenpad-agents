@@ -1,8 +1,10 @@
 """The Runs page and tile as the touch bar shows them, checked against the
-app protocol by the stand-in touch bar: one row per project, the joins to
-agents and tasks, the warning for more than one active run, the runs
-needing you, a run's card, and Open PR on a run with a pull request."""
+app protocol by the stand-in touch bar: a grid of project cells, a project's
+runs, the joins to agents and tasks, the warning for more than one active
+run, the runs needing you, a run's card, and Open PR on a run with a pull
+request."""
 
+import hashlib
 import unittest
 
 from agents_support import SESSION
@@ -53,7 +55,24 @@ class RunsPageTests(unittest.TestCase):
         b.set_scan(scan(*args, **kwargs))
         return b
 
-    def test_one_row_per_project_active_runs_first_then_the_newest_of_each_branch(self):
+    def inside(self, b, repo=API):
+        """The project's view of the board: its cell tapped, as the page has it."""
+        self.cells(b, fleet())  # the page last built holds the cell's id
+        cell = next(w for w, x in self.cells(b, fleet()).items() if x.look.get("label") == repo.rsplit("/", 1)[1])
+        self.assertTrue(b.navigate(cell))
+        return b
+
+    def labels(self, b, f, projects=False, **where):
+        """The labels of the page's widgets (those matching where; projects:
+        only the project cells)."""
+        page = self.accepted(b, f).pages["runs"]
+        return [
+            w.look["label"]
+            for w in page.widgets
+            if all(getattr(w, k) == v for k, v in where.items()) and (not projects or w.id.startswith("proj."))
+        ]
+
+    def test_a_grid_of_project_cells_then_the_project_s_runs_active_first(self):
         b = self.board(
             [
                 (API, [run(5, "fm/new", "completed"), run(4, "fm/fix", "running"), run(3, "fm/new", "failed")]),
@@ -64,20 +83,80 @@ class RunsPageTests(unittest.TestCase):
         f = fleet()
         apps = self.accepted(b, f)
         page = apps.pages["runs"]
-        self.assertEqual((page.look["title"], page.look["text"], page.columns, page.rows), ("Runs", "1 active", 5, 2))
+        self.assertEqual((page.look["title"], page.look["text"], page.columns, page.rows), ("Runs", "1 active", 6, 2))
         self.assertEqual(page.look["icon"], LIGHTHOUSE)
-        cells = {w.id: w for w in page.widgets}
-        api = [w for w in page.widgets if w.row == 0]
-        self.assertEqual([w.look.get("label") for w in api], ["api", "fm/fix", "fm/new"])
-        self.assertEqual(cells[rid(4)].look["text"], "running · review")
-        self.assertEqual(cells[rid(4)].look["tone"], "accept")
-        self.assertEqual((cells[rid(5)].look["text"], cells[rid(5)].look["tone"]), ("passed", "neutral"))
-        self.assertNotIn(rid(3), cells)  # superseded by the newer run of fm/new
-        web = [w for w in page.widgets if w.row == 1]
-        self.assertEqual([(w.look["label"], w.look["text"]) for w in web], [("web", "no active run · no runs yet")])
+        # A cell per project, two columns wide, three to a row, each a tap.
+        self.assertEqual(
+            [(w.look["label"], w.look["text"], w.col, w.row, w.cols, w.touch) for w in page.widgets],
+            [("api", "1 active", 0, 0, 2, "tap"), ("web", "no active run · no runs yet", 2, 0, 2, "tap")],
+        )
+        self.assertEqual(
+            self.cells(b, f)[widget_id("proj.", hashlib.sha256(API.encode()).hexdigest()[:16])].look["tone"], "neutral"
+        )
         tile = {"tone": "accept", "icon": LIGHTHOUSE, "label": "Runs", "text": "1 active"}
         self.assertEqual(apps.provided()["runs"], tile)
+        # A tap on api shows all its runs, the active ones first.
+        self.inside(b)
+        page = self.accepted(b, f).pages["runs"]
+        self.assertEqual((page.columns, page.rows), (6, 2))
+        top = [w for w in page.widgets if w.row == 0]
+        self.assertEqual(
+            [(w.id, w.look["label"], w.touch) for w in top], [("runs.up", "Back", "tap"), ("runs.title", "api", "none")]
+        )
+        self.assertEqual(top[1].look["text"], "1 active")
+        cells = {w.id: w for w in page.widgets}
+        runs = [w for w in page.widgets if w.row == 1]
+        self.assertEqual([(w.id, w.col, w.cols) for w in runs], [(rid(4), 0, 2), (rid(5), 2, 2), (rid(3), 4, 2)])
+        self.assertEqual([w.look["label"] for w in runs], ["fm/fix", "fm/new", "fm/new"])
+        self.assertEqual((cells[rid(4)].look["text"], cells[rid(4)].look["tone"]), ("running · review", "accept"))
+        self.assertEqual((cells[rid(5)].look["text"], cells[rid(5)].look["tone"]), ("passed", "neutral"))
+        self.assertEqual((cells[rid(3)].look["text"], cells[rid(3)].look["tone"]), ("failed", "neutral"))  # superseded
         self.assertEqual(b.run_of(rid(4)), run_id(4))
+        # Back returns to the grid; a tap on a widget no longer drawn does nothing.
+        self.assertTrue(b.navigate("runs.up"))
+        self.assertEqual(self.labels(b, f), ["api", "web"])
+        self.assertFalse(b.navigate("runs.up"))
+        self.assertFalse(b.navigate(rid(4)))
+
+    def test_a_project_with_no_runs_says_so_and_a_card_returns_to_the_project(self):
+        b = self.board([(API, [run(2, "fm/fix", "running")]), (WEB, [])], details=[detail(2, "fm/fix")])
+        f = fleet()
+        self.inside(b, WEB)
+        self.assertEqual(self.labels(b, f), ["Back", "web", "No runs yet"])
+        self.assertTrue(b.navigate("runs.up"))
+        self.inside(b)
+        b.open_card(run_id(2))
+        self.assertIn(runcard.LINES, self.cells(b, f))
+        b.close_card()
+        self.assertEqual(self.labels(b, f, row=0), ["Back", "api"])  # still in the project
+        # A project that leaves the scan closes its view.
+        b.set_scan(scan([(WEB, [])]))
+        self.assertEqual(self.labels(b, f), ["web"])
+
+    def test_a_project_with_more_runs_than_a_page_takes_pages_of_nine(self):
+        runs = [run(n, "fm/b%d" % n, "completed") for n in range(11)] + [run(20, "fm/live", "running")]
+        b = self.board([(API, runs)], details=[detail(20, "fm/live")])
+        f = fleet()
+        self.inside(b)
+        page = self.accepted(b, f).pages["runs"]
+        self.assertEqual(
+            (page.rows, [w.look["label"] for w in page.widgets if w.row == 0]), (4, ["Back", "api", "Prev", "Next"])
+        )
+        shown = [w.look["label"] for w in page.widgets if w.row > 0]
+        self.assertEqual(shown, ["fm/live"] + ["fm/b%d" % n for n in range(8)])  # the active one first
+        cells = {w.id: w for w in page.widgets}
+        self.assertEqual(cells["runs.title"].look["text"], "1-9 of 12 runs")
+        self.assertEqual((cells["runs.rprev"].touch, cells["runs.rnext"].touch), ("none", "tap"))
+        self.assertTrue(b.navigate("runs.rnext"))
+        page = self.accepted(b, f).pages["runs"]
+        self.assertEqual([w.look["label"] for w in page.widgets if w.row > 0], ["fm/b8", "fm/b9", "fm/b10"])
+        cells = {w.id: w for w in page.widgets}
+        self.assertEqual((cells["runs.title"].look["text"], cells["runs.rnext"].touch), ("10-12 of 12 runs", "none"))
+        self.assertFalse(b.navigate("runs.rnext"))
+        self.assertTrue(b.navigate("runs.rprev"))
+        self.assertEqual(self.accepted(b, f).pages["runs"].widgets[1].look["text"], "1-9 of 12 runs")
+        # The project's pages are not the projects': Back finds the grid on its own page.
+        self.assertEqual(b.offset, 0)
 
     def test_a_run_is_joined_to_its_agent_by_cwd_and_its_task_by_worktree(self):
         b = self.board(
@@ -94,7 +173,7 @@ class RunsPageTests(unittest.TestCase):
         # By the agent's cwd, its task by its endpoint; by the task's worktree, its agent by its endpoint.
         self.assertEqual((views[run_id(2)].pane, views[run_id(2)].task), ("w1:p1", "fix-api"))
         self.assertEqual((views[run_id(1)].pane, views[run_id(1)].task), ("w2:p1", "api-docs"))
-        cells = self.cells(b, f)
+        cells = self.cells(self.inside(b), f)
         self.assertEqual(cells[rid(2)].look["label"], "fix-api")
         self.assertEqual(cells[rid(2)].look["text"], "running · review · PR #12")
         self.assertFalse(any(v.duplicate for v in views.values()))
@@ -112,11 +191,13 @@ class RunsPageTests(unittest.TestCase):
             details=[detail(2, "fm/fix"), detail(1, "fm/fix", at="test")],
         )
         f = fleet([("w1:p1", "claude", "working", "/pool/1/api")], tasks={"lab:w1:p1": Task("fix-api")})
-        cells = self.cells(same_branch, f)
-        head = cells[widget_id("proj.", __import__("hashlib").sha256(API.encode()).hexdigest()[:16])]
+        head = self.cells(same_branch, f)[widget_id("proj.", hashlib.sha256(API.encode()).hexdigest()[:16])]
         self.assertEqual((head.look["tone"], head.look["badge"]), ("reject", "2"))
         self.assertEqual(head.look["text"], "2 active runs for fix-api: at most one each")
-        self.assertEqual(cells[rid(1)].look["badge"], "2+")
+        title = self.cells(self.inside(same_branch), f)["runs.title"]
+        self.assertEqual((title.look["tone"], title.look["badge"]), ("reject", "2"))
+        self.assertEqual(self.cells(same_branch, f)[rid(1)].look["badge"], "2+")
+        self.assertTrue(same_branch.navigate("runs.up"))
         msgs = same_branch.messages(f)
         self.assertEqual((msgs[0]["tone"], msgs[0]["text"]), ("reject", "2 active · 2 on one agent"))
         self.assertEqual(msgs[1]["tone"], "reject")
@@ -152,7 +233,11 @@ class RunsPageTests(unittest.TestCase):
             details=[detail(4, "fm/gate", at="review", step_status="awaiting_approval", findings=2)],
         )
         f = fleet()
-        cells = self.cells(b, f)
+        self.assertEqual(
+            self.cells(b, f)[widget_id("proj.", hashlib.sha256(API.encode()).hexdigest()[:16])].look["text"],
+            "1 active · 2 need you",
+        )
+        cells = self.cells(self.inside(b), f)
         self.assertEqual(cells[rid(4)].look["text"], "waiting on you · review")
         self.assertEqual(cells[rid(4)].look["tone"], "warning")
         self.assertEqual((cells[rid(3)].look["text"], cells[rid(3)].look["tone"]), ("failed", "reject"))
@@ -165,67 +250,43 @@ class RunsPageTests(unittest.TestCase):
         b.set_scan(scan([(API, [run(4, "fm/gate", "running")])], details=[detail(4, "fm/gate", parked=True)]))
         self.assertEqual(b.counts(b.views(f)), (1, 1, 0))
 
-    def test_too_many_runs_or_projects(self):
-        runs = [run(n, "fm/b%d" % n, "running") for n in range(6)]
-        b = self.board([(API, runs)], details=[detail(n, "fm/b%d" % n) for n in range(6)])
-        cells = self.cells(b, fleet())
-        row = sorted((w for w in cells.values() if w.row == 0), key=lambda w: w.col)
-        self.assertEqual([w.look["label"] for w in row[1:]], ["fm/b0", "fm/b1", "fm/b2", "+3 active"])
-        projects = [("/repos/p%d" % n, []) for n in range(5)] + [("/repos/busy", [run(9, "fm/x", "running")])]
+    def test_too_many_projects_take_pages_of_nine_in_the_scan_s_order(self):
+        projects = [("/repos/p%d" % n, []) for n in range(13)] + [("/repos/busy", [run(9, "fm/x", "running")])]
         b = self.board(projects, details=[detail(9, "fm/x")])
-        page = self.accepted(b, fleet()).pages["runs"]
-        self.assertEqual(page.rows, 4)
-        heads = [w.look["label"] for w in page.widgets if w.col == 0]
-        # Pages of three rows with the pager under them, in the scan's order.
-        self.assertEqual(heads, ["p0", "p1", "p2", "Previous"])
-        self.assertEqual(self.cells(b, fleet())["runs.span"].look["label"], "1-3 of 6")
-        self.assertEqual(
-            (self.cells(b, fleet())["runs.prev"].touch, self.cells(b, fleet())["runs.next"].touch), ("none", "tap")
-        )
-        self.assertTrue(b.turn("runs.next"))
-        page = self.accepted(b, fleet()).pages["runs"]
-        self.assertEqual([w.look["label"] for w in page.widgets if w.col == 0], ["p3", "p4", "busy", "Previous"])
-        busy = next(w for w in page.widgets if w.col == 0 and w.look["label"] == "busy")
-        self.assertEqual(busy.look.get("text"), "1 active")
-
-    def test_a_project_starting_a_run_does_not_reshuffle_the_pages(self):
-        projects = [("/repos/p%d" % n, []) for n in range(6)]
-        b = self.board(projects)
         f = fleet()
-
-        def shown():
-            self.cells(b, f)
-            return [w.look["label"] for w in self.accepted(b, f).pages["runs"].widgets if w.col == 0]
-
-        self.assertTrue((shown(), b.turn("runs.next"))[1])
-        self.assertEqual(shown(), ["p3", "p4", "p5", "Previous"])
-        projects[5] = ("/repos/p5", [run(9, "fm/x", "running")])
-        b.set_scan(scan(projects))
-        self.assertEqual(shown(), ["p3", "p4", "p5", "Previous"])
-        self.assertTrue(b.turn("runs.prev"))
-        self.assertEqual(shown(), ["p0", "p1", "p2", "Previous"])
-
-    def test_every_project_is_reachable_through_the_pager(self):
-        projects = [("/repos/p%d" % n, []) for n in range(8)]
-        b = self.board(projects)
-        f = fleet()
-
-        def shown():
-            self.cells(b, f)  # draw: the pager's ids are those of the page last built
-            return [w.look["label"] for w in self.accepted(b, f).pages["runs"].widgets if w.col == 0]
-
-        self.assertEqual(shown(), ["p0", "p1", "p2", "Previous"])
+        # Twelve projects fit the grid; more take pages of nine, the pager under them.
+        self.assertEqual(self.labels(b, f, projects=True), ["p%d" % n for n in range(9)])
+        self.assertEqual(self.accepted(b, f).pages["runs"].rows, 4)
+        cells = self.cells(b, f)
+        self.assertEqual(cells["runs.span"].look["label"], "1-9 of 14")
+        self.assertEqual((cells["runs.prev"].touch, cells["runs.next"].touch), ("none", "tap"))
+        self.assertEqual(cells["runs.next"].row, 3)
         self.assertTrue(b.turn("runs.next"))
-        self.assertEqual(shown(), ["p3", "p4", "p5", "Previous"])
-        self.assertTrue(b.turn("runs.next"))
-        self.assertEqual(shown(), ["p6", "p7", "Previous"])
-        self.assertEqual(self.cells(b, f)["runs.span"].look["label"], "7-8 of 8")
+        self.assertEqual(self.labels(b, f, projects=True), ["p9", "p10", "p11", "p12", "busy"])
+        busy = next(w for w in self.accepted(b, f).pages["runs"].widgets if w.look["label"] == "busy")
+        self.assertEqual((busy.look["text"], busy.look["tone"]), ("1 active", "neutral"))
+        self.assertEqual(self.cells(b, f)["runs.span"].look["label"], "10-14 of 14")
         self.assertEqual(self.cells(b, f)["runs.next"].touch, "none")
         self.assertFalse(b.turn("runs.next"))  # nothing past the last page
-        self.assertTrue(b.turn("runs.prev"))
-        self.assertEqual(shown(), ["p3", "p4", "p5", "Previous"])
-        # Four projects fit one page: no pager, and the offset is forgotten.
-        b = self.board([("/repos/p%d" % n, []) for n in range(4)])
+        # A tap on busy opens it, and Back returns to the same page.
+        self.assertTrue(b.navigate(next(w for w, x in self.cells(b, f).items() if x.look.get("label") == "busy")))
+        self.assertEqual(self.labels(b, f, row=0), ["Back", "busy"])
+        self.assertTrue(b.navigate("runs.up"))
+        self.assertEqual(self.labels(b, f, projects=True), ["p9", "p10", "p11", "p12", "busy"])
+
+    def test_a_project_starting_a_run_does_not_reshuffle_the_pages(self):
+        projects = [("/repos/p%d" % n, []) for n in range(13)]
+        b = self.board(projects)
+        f = fleet()
+        self.assertTrue((self.cells(b, f), b.turn("runs.next"))[1])
+        self.assertEqual(self.labels(b, f, projects=True), ["p9", "p10", "p11", "p12"])
+        projects[12] = ("/repos/p12", [run(9, "fm/x", "running")])
+        b.set_scan(scan(projects))
+        self.assertEqual(self.labels(b, f, projects=True), ["p9", "p10", "p11", "p12"])
+        self.assertTrue((self.cells(b, f), b.turn("runs.prev"))[1])
+        self.assertEqual(self.labels(b, f, projects=True), ["p%d" % n for n in range(9)])
+        # Twelve projects fit one page: no pager, and the offset is forgotten.
+        b = self.board([("/repos/p%d" % n, []) for n in range(12)])
         self.assertNotIn("runs.next", self.cells(b, f))
         self.assertFalse(b.turn("runs.next"))
 
@@ -298,7 +359,7 @@ class RunsPageTests(unittest.TestCase):
         ]
         for r, d, shown in cases:
             with self.subTest(status=r.status, pr=r.pr):
-                b = self.board([(API, [r])], details=[d] if d else [])
+                b = self.inside(self.board([(API, [r])], details=[d] if d else []))
                 cell = self.cells(b, f)[rid(2)]
                 self.assertEqual(cell.touch, "tap")
                 self.assertNotIn("hold", cell.look["text"])

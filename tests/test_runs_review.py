@@ -185,6 +185,13 @@ class LoopTests(unittest.TestCase):
         cfg = config(herdr_poll=0.05)
         cfg.runs = RunsSettings([API], True, poll=0.05, idle=60.0, watch=watch)
         rig = Rig(self, self.herdr, self.firstmate, cfg=cfg, nomistakes=self.nm, launcher=launcher or self.launch)
+
+        def project():
+            page = rig.apps.pages.get("runs")
+            return next((w.id for w in page.widgets if w.look.get("label") == "api"), None) if page else None
+
+        rig.until(lambda: project() is not None)
+        rig.apps.press(rig.client(), "runs", project(), "tap")  # the project's runs
         rig.until(lambda: self.widget(rig, widget_id("run.", run_id(2))).get("label") == "fix-api")
         return rig
 

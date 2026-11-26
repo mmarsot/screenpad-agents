@@ -1,9 +1,9 @@
-"""The Projects page (projectpage.py): the list with its presets and pages of
-three, a project's settings, a setting's values, choices staged in a draft
-and sent only by Validate (every drafted change of every project, in one
-go), what is shown while a change is a draft and while it is pending, and
-that every view is a page the touch bar accepts (bar_support's checks of the
-protocol)."""
+"""The Projects page (projectpage.py): the list, a grid of project cells in
+pages of nine whose tap opens the project, a project's settings with its
+presets, a setting's values, choices staged in a draft and sent only by
+Validate (every drafted change of every project, in one go), what is shown
+while a change is a draft and while it is pending, and that every view is a
+page the touch bar accepts (bar_support's checks of the protocol)."""
 
 import unittest
 
@@ -49,15 +49,21 @@ class PageTests(unittest.TestCase):
     def tap(self, view, widget):
         return view.touch(widget)
 
-    def preset(self, view, label, row=0):
-        return self.ids(view, label, row)[0]
+    def preset(self, view, label):
+        return self.ids(view, label)[0]
+
+    def stage(self, view, label, name="api"):
+        """Open a project, tap one of its presets, and come back to the list."""
+        self.open_project(view, name)
+        self.tap(view, self.preset(view, label))
+        self.tap(view, "pj.back")
 
     def open_project(self, view, name="api"):
         self.tap(view, next(w for w, x in self.widgets(view).items() if x.look.get("label") == name))
 
     # --- the list -------------------------------------------------------------
 
-    def test_the_list_has_a_row_per_project_with_its_settings_and_presets(self):
+    def test_the_list_is_a_grid_of_project_cells_with_their_settings(self):
         view = self.view(project(preset="iterate"), project("site", "pr", False))
         msg, widgets = self.accepted(view)
         self.assertEqual(
@@ -65,55 +71,55 @@ class PageTests(unittest.TestCase):
         )
         self.assertEqual((msg["columns"], msg["rows"]), (6, 4))
         names = [w for w in widgets.values() if w.look.get("label") in ("api", "site")]
+        self.assertEqual([(w.col, w.row, w.cols, w.touch) for w in names], [(0, 0, 2, "tap"), (2, 0, 2, "tap")])
         self.assertEqual(
             [w.look["text"] for w in names],
             ["validated · auto-merge · desktop first · opus", "plain PR · you merge · desktop first · opus"],
         )
-        # Iterate is lit for the project whose preset it is; it needs no tap.
-        api = [w for w in widgets.values() if w.row == 0 and w.look.get("label") in ("Iterate", "Refine")]
-        self.assertEqual(
-            [(w.look["label"], w.look["tone"], w.touch) for w in api],
-            [("Iterate", "accept", "none"), ("Refine", "neutral", "tap")],
-        )
-        self.assertEqual(len(self.ids(view, "Settings")), 2)
+        # No preset or Settings buttons on the list: the cell itself opens the project.
+        labels = {w.look.get("label") for w in widgets.values()}
+        self.assertFalse(labels & {"Iterate", "Refine", "Settings"})
         # Nothing drafted: Validate and Discard are there and dead.
         self.assertEqual(
             (widgets["pj.validate"].look["text"], widgets["pj.validate"].touch), ("nothing to send", "none")
         )
         self.assertEqual(widgets["pj.discard"].touch, "none")
 
-    def test_projects_take_pages_of_three(self):
-        view = self.view(*[project("p%d" % i) for i in range(8)])
+    def test_projects_take_pages_of_nine_in_three_rows_of_three(self):
+        view = self.view(*[project("p%d" % i) for i in range(12)])
         widgets = self.widgets(view)
-        shown = [
-            w.look["label"]
-            for w in widgets.values()
-            if w.look.get("label", "").startswith("p") and w.row < 3 and w.col == 0
-        ]
-        self.assertEqual(shown, ["p0", "p1", "p2"])
-        self.assertEqual(widgets["pj.span"].look["label"], "1-3 of 8")
+
+        def shown():
+            return {w.look["label"]: (w.col, w.row) for w in self.widgets(view).values() if w.row < 3 and w.cols == 2}
+
+        self.assertEqual(shown(), {"p%d" % i: (2 * (i % 3), i // 3) for i in range(9)})
+        self.assertEqual(widgets["pj.span"].look["label"], "1-9 of 12")
         self.assertEqual((widgets["pj.prev"].touch, widgets["pj.next"].touch), ("none", "tap"))
         self.assertEqual(widgets["pj.validate"].row, 3)  # Validate is on every page
         self.tap(view, "pj.next")
-        self.tap(view, "pj.next")
+        self.assertEqual(shown(), {"p9": (0, 0), "p10": (2, 0), "p11": (4, 0)})
         widgets = self.widgets(view)
-        self.assertEqual([w.look["label"] for w in widgets.values() if w.col == 0 and w.row < 3], ["p6", "p7"])
-        self.assertEqual((widgets["pj.span"].look["label"], widgets["pj.next"].touch), ("7-8 of 8", "none"))
+        self.assertEqual((widgets["pj.span"].look["label"], widgets["pj.next"].touch), ("10-12 of 12", "none"))
         self.tap(view, "pj.prev")
-        self.assertEqual(self.widgets(view)["pj.span"].look["label"], "4-6 of 8")
-        # Fewer projects and the page is still in range; three need no pager.
-        view.set_read(Read([project("p%d" % i) for i in range(3)]))
+        self.assertEqual(self.widgets(view)["pj.span"].look["label"], "1-9 of 12")
+        # Fewer projects and the page is still in range; nine need no pager.
+        self.tap(view, "pj.next")
+        view.set_read(Read([project("p%d" % i) for i in range(9)]))
         self.assertNotIn("pj.span", self.widgets(view))
+        self.assertEqual(len(shown()), 9)
 
     # --- the draft: nothing is sent until Validate -------------------------------
 
     def test_a_preset_tap_stages_it_and_sends_nothing(self):
         view = self.view()
+        self.open_project(view)
         refine = self.preset(view, "Refine")
         self.assertEqual(self.tap(view, refine), (True, None))
         msg, widgets = self.accepted(view)
         self.assertEqual((msg["tone"], msg["badge"], msg["text"]), ("warning", "1", "2 projects · 1 to validate"))
         self.assertEqual(widgets[refine].look["tone"], "warning")
+        self.tap(view, "pj.back")
+        msg, widgets = self.accepted(view)
         row = next(w for w in widgets.values() if w.look.get("label") == "api")
         self.assertEqual((row.look["text"], row.look["tone"]), ("draft: Refine", "warning"))
         self.assertEqual(
@@ -123,8 +129,8 @@ class PageTests(unittest.TestCase):
 
     def test_validate_gives_every_drafted_change_of_every_project_in_order(self):
         view = self.view()
-        self.tap(view, self.preset(view, "Refine"))
-        self.tap(view, self.preset(view, "Iterate", row=1))
+        self.stage(view, "Refine")
+        self.stage(view, "Iterate", "site")
         self.open_project(view, "site")
         self.tap(view, "pj.annot.off")
         self.tap(view, "pj.model")
@@ -151,7 +157,7 @@ class PageTests(unittest.TestCase):
 
     def test_discard_drops_the_draft(self):
         view = self.view()
-        self.tap(view, self.preset(view, "Refine"))
+        self.stage(view, "Refine")
         self.assertEqual(self.tap(view, "pj.discard"), (True, None))
         msg, widgets = self.accepted(view)
         self.assertEqual((msg["tone"], "badge" in msg), ("neutral", False))
@@ -189,8 +195,8 @@ class PageTests(unittest.TestCase):
 
     def test_a_read_that_has_a_drafted_change_drops_it_and_a_gone_project_drops_its_draft(self):
         view = self.view()
-        self.tap(view, self.preset(view, "Refine"))
-        self.tap(view, self.preset(view, "Refine", row=1))
+        self.stage(view, "Refine")
+        self.stage(view, "Refine", "site")
         view.set_read(Read([project(preset="refine", merge=False), project("site", "pr", False)]))
         self.assertEqual(view.changes(), [Change("site", "preset", "refine")])
         view.set_read(Read([project(preset="refine", merge=False)]))
@@ -200,13 +206,14 @@ class PageTests(unittest.TestCase):
 
     def test_a_read_that_has_the_change_ends_the_pending_state(self):
         view = self.view()
-        self.tap(view, self.preset(view, "Refine"))
+        self.stage(view, "Refine")
         self.tap(view, "pj.validate")
-        refine = self.preset(view, "Refine")
         msg, widgets = self.accepted(view)
-        self.assertEqual(widgets[refine].look["tone"], "warning")
         row = next(w for w in widgets.values() if w.look.get("label") == "api")
         self.assertEqual(row.look["text"], "asked firstmate: Refine")
+        self.open_project(view)
+        refine = self.preset(view, "Refine")
+        self.assertEqual(self.widgets(view)[refine].look["tone"], "warning")
         view.set_read(Read([project(preset="refine", merge=False), project("site", "pr", False)]))
         self.assertFalse(view.has_pending())
         msg, widgets = self.accepted(view)
@@ -252,7 +259,7 @@ class PageTests(unittest.TestCase):
 
     def test_an_unreadable_registry_keeps_the_draft_and_what_was_pending(self):
         view = self.view()
-        self.tap(view, self.preset(view, "Refine"))
+        self.stage(view, "Refine")
         view.set_read(Read(error="cannot read data/projects.md: No such file or directory"))
         self.assertEqual(view.changes(), [])  # no projects to name them by: shown again with the files
         msg, widgets = self.accepted(view)
@@ -263,9 +270,9 @@ class PageTests(unittest.TestCase):
 
     # --- a project's settings -------------------------------------------------
 
-    def test_a_project_s_settings_are_one_tap_from_its_row(self):
+    def test_a_project_s_settings_are_one_tap_from_its_cell(self):
         view = self.view(project(model="sonnet", effort="high", where="laptop"))
-        self.assertEqual(self.tap(view, self.ids(view, "Settings")[0]), (True, None))
+        self.assertEqual(self.tap(view, self.ids(view, "api")[0]), (True, None))
         msg, widgets = self.accepted(view)
         self.assertEqual((msg["rows"], widgets["pj.back"].look["label"]), (4, "Back"))
         shown = {w.look["label"]: w.look["text"] for w in widgets.values() if w.row in (1, 2)}
@@ -294,7 +301,8 @@ class PageTests(unittest.TestCase):
         )
         self.assertEqual(widgets["pj.validate"].touch, "tap")
         self.tap(view, "pj.back")
-        self.assertEqual(len(self.ids(view, "Settings")), 1)
+        self.assertEqual(len(self.ids(view, "api")), 1)
+        self.assertEqual(self.ids(view, "Back"), [])  # the list again
 
     def test_a_setting_s_values_are_large_buttons_and_one_tap_stages_one(self):
         view = self.view(project(model="sonnet"))
@@ -336,17 +344,17 @@ class PageTests(unittest.TestCase):
         # A project that left the registry closes its view.
         view.set_read(Read([project("site", "pr", False)]))
         self.assertEqual(self.ids(view, "Back"), [])
-        self.assertEqual(len(self.ids(view, "Settings")), 1)
+        self.assertEqual(len(self.ids(view, "site")), 1)
 
     def test_every_view_fits_the_protocol_with_the_longest_names_and_values(self):
         long = "x" * 60
-        view = self.view(project(long, model=long, effort=long, where=long), *[project("p%d" % i) for i in range(8)])
-        self.tap(view, self.preset(view, "Refine"))
+        view = self.view(project(long, model=long, effort=long, where=long), *[project("p%d" % i) for i in range(11)])
         self.accepted(view)
         self.tap(view, "pj.next")
         self.accepted(view)
         view.offset = 0
         self.open_project(view, "x" * 31 + "…")
+        self.tap(view, self.preset(view, "Refine"))
         self.accepted(view)
         for opener in ("pj.validation", "pj.model", "pj.where", "pj.effort"):
             self.tap(view, opener)

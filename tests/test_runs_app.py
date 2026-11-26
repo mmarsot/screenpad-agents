@@ -41,8 +41,19 @@ class RunsLoopTests(unittest.TestCase):
         self.opened, self.open_error = [], None
         rig = Rig(self, self.herdr, self.firstmate, cfg=cfg, nomistakes=self.nm, opener=self.open)
         if wait:
-            rig.until(lambda: self.run_label(rig) == "fix-api")
+            self.open_project(rig)
         return rig
+
+    def open_project(self, rig, name="api"):
+        """Tap a project's cell on the Runs page and wait for its runs."""
+
+        def cell():
+            page = rig.apps.pages.get("runs")
+            return next((w.id for w in page.widgets if w.look.get("label") == name), None) if page else None
+
+        rig.until(lambda: cell() is not None)
+        rig.apps.press(rig.client(), "runs", cell(), "tap")
+        rig.until(lambda: self.run_label(rig) == "fix-api")
 
     def open(self, url):
         """The stand-in for the browser: records the URL, or fails."""
@@ -65,7 +76,7 @@ class RunsLoopTests(unittest.TestCase):
         self.assertEqual(rig.logged, [])
 
     def test_every_project_is_reachable_through_the_pager_in_the_loop(self):
-        extra = ["/repos/p%d" % n for n in range(5)]
+        extra = ["/repos/p%d" % n for n in range(13)]
         for repo in extra:
             self.nm.dirs[repo] = (repo, "main", None)
             self.nm.runs[repo] = []
@@ -75,13 +86,14 @@ class RunsLoopTests(unittest.TestCase):
 
         def heads():
             page = rig.apps.pages.get("runs")
-            return [w.look["label"] for w in page.widgets if w.col == 0] if page else []
+            return [w.look["label"] for w in page.widgets if w.cols == 2 and w.row < 3] if page else []
 
-        rig.until(lambda: heads() == ["api", "p0", "p1", "Previous"])
+        first = ["api"] + ["p%d" % n for n in range(8)]
+        rig.until(lambda: heads() == first)
         rig.apps.press(rig.client(), "runs", "runs.next", "tap")
-        rig.until(lambda: heads() == ["p2", "p3", "p4", "Previous"])
+        rig.until(lambda: heads() == ["p8", "p9", "p10", "p11", "p12"])
         rig.apps.press(rig.client(), "runs", "runs.prev", "tap")
-        rig.until(lambda: heads() == ["api", "p0", "p1", "Previous"])
+        rig.until(lambda: heads() == first)
 
     def test_a_tap_opens_the_runs_card_and_focus_focuses_its_agent(self):
         rig = self.rig()
@@ -175,7 +187,7 @@ class RunsLoopTests(unittest.TestCase):
         rig.until(lambda: self.nm.count("listing") >= 3)
         self.assertEqual(rig.logged, ["no-mistakes: No such file or directory"])
         self.nm.error = None
-        rig.until(lambda: self.run_label(rig) == "fix-api")
+        self.open_project(rig)
         self.assertEqual(rig.logged[-1], "no-mistakes answers again")
 
 

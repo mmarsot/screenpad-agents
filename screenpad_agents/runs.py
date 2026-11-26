@@ -3,14 +3,16 @@ and firstmate task, and the runs tile.
 
 Pure: it turns the last Scan (what runwatch.py read from no-mistakes) and
 what the Agents page knows (fleet.py: Herdr's agents and firstmate's tasks)
-into the "page" and "set" messages, and says what a touch means. One row per
-project: the project's widget, then its active runs and its recent ones. A
+into the "page" and "set" messages, and says what a touch means. The page is
+a grid of project cells (name, machine, how many runs are active:
+runlist.py); a tap on one opens that project's view, every one of its runs,
+the active ones first. A
 run is joined to the repo copies whose own run (the one no-mistakes resolves
 there) is of the run's branch, a copy to the Herdr agent whose cwd it is
 and to the firstmate task whose worktree it is. More than one active run
 for one agent, one repo copy or one branch is the warning: its project's
-widget turns red. Tapping a run opens its card (runcard.py) in place of the
-grid. Nothing here acts on a run.
+cell turns red. Tapping a run opens its card (runcard.py) in place of the
+view it was in; Back returns to it. Nothing here acts on a run.
 
 A run whose pull request is ready for the captain (its newest run of the
 branch, ended without failing, with a pull request on the forge, and joined
@@ -20,13 +22,12 @@ reviewcall.py), and Watch, which opens a live view of the run, when [runs]
 watch_command is set.
 """
 
-import hashlib
 import os
 
 from screenpad_app import clip
-from screenpad_app.common import MAX_BADGE, MAX_LABEL, MAX_ROWS, MAX_TEXT, MAX_TILE_TEXT
+from screenpad_app.common import MAX_BADGE, MAX_TILE_TEXT
 
-from . import runcard
+from . import runcard, runlist
 from .common import LIGHTHOUSE, RUNS_PAGE, RUNS_TILE, icon
 from .runmodel import READY as READY
 from .runmodel import Copy as Copy
@@ -35,9 +36,7 @@ from .runmodel import Scan as Scan
 from .runmodel import View as View
 from .runmodel import widget_id as widget_id
 
-COLUMNS = 5
-MIN_ROWS = 2
-RUN_CELLS = COLUMNS - 1
+COLUMNS = runlist.COLUMNS
 LOCAL = "laptop"  # this machine's label, once there is a remote
 
 
@@ -60,12 +59,15 @@ class Runs:
         self.scan = None
         self.error = None
         self.card = None
+        self.project = None  # the key of the project whose runs the page shows
         self.down: dict = {}
         self.offset = 0  # the first project of the page shown, when projects take pages
+        self.run_offset = 0  # the first run of the open project's page shown
         self._mine: Scan | None = None
         self._theirs: dict = {}
         self._runs: dict = {}
         self._turns: dict = {}
+        self._projects: dict = {}
         self._real: dict = {}
 
     def set_scan(self, scan, error=None):
@@ -103,6 +105,11 @@ class Runs:
             )
         if self.card is not None and self.find(self.card.run_id) is None:
             self.card = None
+        if self.project is not None and self.project_of(self.project) is None:
+            self.project = None
+
+    def project_of(self, key):
+        return next((p for p in self.scan.projects if p.key == key), None) if self.scan else None
 
     def machine_of(self, run_id):
         """The remote machine run_id is on, None for this one."""
@@ -208,12 +215,28 @@ class Runs:
 
     def turn(self, widget):
         """A tap on Previous or Next of the page last built: True if the
-        page turned."""
+        page turned (the projects', or the open project's runs')."""
         step = self._turns.get(widget)
         if step is None:
             return False
-        self.offset = max(0, self.offset + step)
+        if self.project is None:
+            self.offset = max(0, self.offset + step)
+        else:
+            self.run_offset = max(0, self.run_offset + step)
         return True
+
+    def navigate(self, widget):
+        """A tap that moves around the page last built: a project cell
+        opens that project's runs, Back leaves them, Previous and Next turn
+        a page. True if the page changed."""
+        key = self._projects.get(widget)
+        if key is not None and self.project_of(key) is not None:
+            self.project, self.run_offset = key, 0
+            return True
+        if widget == runlist.UP and self.project is not None:
+            self.project = None
+            return True
+        return self.turn(widget)
 
     def open_card(self, run_id):
         self.card = runcard.RunCard(run_id) if self.find(run_id) is not None else None
@@ -334,7 +357,11 @@ class Runs:
             widgets = card.widgets(view, self._review_of(fleet, view), watch)
             columns, rows = runcard.COLUMNS, runcard.ROWS
         else:
-            widgets, rows = self._grid(views)
+            project = self.project_of(self.project) if self.project is not None else None
+            if project is not None:
+                widgets, rows = runlist.project_view(self, project, views[project.key])
+            else:
+                widgets, rows = runlist.grid(self, views)
             columns = COLUMNS
         msg = {"op": "page", "page": RUNS_PAGE, "title": "Runs", "icon": icon(LIGHTHOUSE)}
         msg["text"] = clip(self.summary(views), MAX_TILE_TEXT)
@@ -349,110 +376,3 @@ class Runs:
         if review is None or reviews is None or not (reviews.can_open or review.head):
             return None
         return review, reviews.entry(review), reviews.can_open
-
-    def _grid(self, views):
-        self._runs, self._turns = {}, {}
-        projects = self.scan.projects if self.scan else []
-        # A machine that could not be read comes first, a row of its own.
-        top = [self._down(row, name, *down) for row, (name, down) in enumerate(self.down.items())]
-        if not projects and not top:
-            return [self._note()], MIN_ROWS
-        room = MAX_ROWS - len(top)
-        paged = len(projects) > room
-        if paged:
-            # Pages of three rows (the Projects page's), the pager under
-            # them, in the scan's own order so a turn never reshuffles them.
-            per = max(1, room - 1)
-            self.offset = min(self.offset, (len(projects) - 1) // per * per) // per * per
-            total, projects = len(projects), projects[self.offset : self.offset + per]
-        else:
-            self.offset = 0
-        cells = [c for row in top for c in row]
-        for row, p in enumerate(projects, start=len(top)):
-            cells += self._row(row, p, views[p.key])
-        used = len(top) + len(projects)
-        if paged:
-            cells += self._pager(used, per, total)
-        return cells, MAX_ROWS if paged else max(MIN_ROWS, used)
-
-    def _pager(self, row, per, total):
-        """Previous, the span shown and Next, in the row under the projects."""
-        last = self.offset + per >= total
-        span = "%d-%d of %d" % (self.offset + 1, min(self.offset + per, total), total)
-        cells = [
-            {"id": "runs.prev", "col": 0, "row": row, "cols": 2, "label": "Previous"},
-            {"id": "runs.span", "col": 2, "row": row, "cols": 1, "label": span, "touch": "none"},
-            {"id": "runs.next", "col": 3, "row": row, "cols": 2, "label": "Next"},
-        ]
-        if self.offset:
-            self._turns["runs.prev"] = -per
-        else:
-            cells[0]["touch"] = "none"
-        if last:
-            cells[2]["touch"] = "none"
-        else:
-            self._turns["runs.next"] = per
-        return cells
-
-    def _down(self, row, name, notice, why):
-        """The row that says a remote machine could not be read, and why:
-        its runs are not on the page, so it never looks like it has none."""
-        cell = {"id": widget_id("runs.down.", name), "col": 0, "row": row, "cols": COLUMNS, "touch": "none"}
-        return [dict(cell, label=clip(notice, MAX_LABEL), text=clip(why, MAX_TEXT), tone="reject")]
-
-    def _row(self, row, project, views):
-        head = {"id": widget_id("proj.", hashlib.sha256(project.key.encode()).hexdigest()[:16]), "touch": "none"}
-        head.update({"col": 0, "row": row, "label": clip(project.name, MAX_LABEL)})
-        active = [v for v in views if v.run.active]
-        if len(active) > RUN_CELLS:
-            shown, more = active[: RUN_CELLS - 1], len(active) - RUN_CELLS + 1
-        else:
-            # Then the recent ones, the newest of each branch not shown yet.
-            shown, more = list(active), 0
-            branches = {v.run.branch for v in shown}
-            for v in views:
-                if len(shown) < RUN_CELLS and not v.run.active and v.run.branch not in branches:
-                    shown.append(v)
-                    branches.add(v.run.branch)
-        doubled = [v for v in active if v.duplicate]
-        if project.error:
-            head.update({"text": clip(project.error, MAX_TEXT), "tone": "warning"})
-        elif doubled:
-            head.update({"tone": "reject", "badge": clip(str(len(doubled)), MAX_BADGE)})
-            head["text"] = clip("%d active runs for %s: at most one each" % (len(doubled), doubled[0].name()), MAX_TEXT)
-        else:
-            attention = sum(v.attention for v in views)
-            parts = ["%d active" % len(active) if active else "no active run"]
-            parts += ["%d need%s you" % (attention, "s" if attention == 1 else "")] if attention else []
-            parts += [] if views else ["no runs yet"]
-            parts = [self.label(project)] + parts if self.machines else parts
-            head.update({"text": " · ".join(parts), "tone": "warning" if attention else "neutral"})
-        cells = [head]
-        for col, v in enumerate(shown, start=1):
-            wid = widget_id("run.", v.run.id)
-            self._runs[wid] = v.run.id
-            cell = {"id": wid, "col": col, "row": row, "label": clip(v.name(), MAX_LABEL), "tone": v.tone()}
-            cell["text"] = clip(v.said(), MAX_TEXT)
-            if v.duplicate:
-                cell["badge"] = "2+"
-            cells.append(cell)
-        if more:
-            cells.append({"id": widget_id("runs.more.", head["id"][5:]), "col": COLUMNS - 1, "row": row})
-            cells[-1].update({"label": "+%d active" % more, "touch": "none"})
-        return cells
-
-    def _note(self):
-        return dict(self._note_look(), col=0, row=0, cols=COLUMNS)
-
-    def _note_look(self):
-        if self.error:
-            note = {"id": "runs.note", "label": "no-mistakes unavailable", "text": clip(self.error, MAX_TEXT)}
-            return dict(note, touch="none")
-        if self.scan is None:
-            return {"id": "runs.note", "label": "Reading no-mistakes…", "touch": "none"}
-        return {
-            "id": "runs.note",
-            "label": "No projects",
-            "text": "no-mistakes watches none of the repos configured or found",
-            "touch": "none",
-        }
