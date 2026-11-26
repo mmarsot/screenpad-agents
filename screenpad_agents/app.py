@@ -43,6 +43,7 @@ import threading
 import time
 
 from screenpad_app import Link
+from screenpad_app.common import MAX_PAGES
 
 from . import callpage, reviewcall
 from . import card as cards
@@ -53,11 +54,13 @@ from .common import (
     CALLS_PAGE,
     CALLS_TILE,
     FLEET_TILE,
+    LIMITS_PAGE,
     PAGE,
     PROJECTS_PAGE,
     RECONNECT,
     RUNS_PAGE,
     RUNS_TILE,
+    USAGE_TILE,
 )
 from .common import why as _why
 from .extras import Extras
@@ -97,6 +100,18 @@ class App:
             remotes = build(config.runs, self._post, clock, ssh_run or subprocess.run)
             self.runs = RunsWatch(config.runs, nomistakes, config.home, self._post, clock, remotes=remotes, **opens)
         self.extras = Extras(config, firstmate, self._post, self.log, self._tell, clock, usage_run, usage_launcher)
+        # The touch bar takes MAX_PAGES pages from an app. With firstmate the
+        # Agents page is given only with [herdr] agents_page, and then, with
+        # every other page on, Captain's Call's own page gives way (its
+        # widget is on the Agents page, and the calls tile opens its board).
+        self.fleet.agents_page = firstmate is None or config.agents_page
+        given = self.fleet.agents_page + (self.runs is not None) + self.extras.pages()
+        self.fleet.calls_page = firstmate is None or given + 1 <= MAX_PAGES
+        if firstmate is not None and not self.fleet.calls_page:
+            self.log(
+                "the touch bar takes %d pages from an app: no calls page (Captain's Call is on the Agents page)"
+                % MAX_PAGES
+            )
         self.stopping = threading.Event()
         self._results: queue.Queue = queue.Queue()
         self._jobs: queue.Queue = queue.Queue()
@@ -313,7 +328,7 @@ class App:
             for tile in msg.get("unplaced") or []:
                 # Optional ones: page = "calls" is what the bar needs for
                 # Captain's Call, and the agents and bearings tiles may stay off it.
-                if tile in (CALLS_TILE, FLEET_TILE, BEARINGS_TILE):
+                if tile in (CALLS_TILE, FLEET_TILE, BEARINGS_TILE, USAGE_TILE):
                     continue
                 self.log('tile "%s" has no spot; give it one with tile = "%s" in touchbar.toml' % (tile, tile))
             for tile in msg.get("taken") or []:
@@ -323,6 +338,9 @@ class App:
         elif op == "event" and msg.get("page") == CALLS_PAGE and self.firstmate is not None:
             if msg.get("type") == "tap" and self._call_tap(msg.get("widget")):
                 self._dirty = True
+        elif op == "event" and msg.get("page") == LIMITS_PAGE:
+            if msg.get("type") == "tap":
+                self.extras.touch(LIMITS_PAGE, msg.get("widget"))
         elif op == "event" and msg.get("page") == PROJECTS_PAGE:
             if msg.get("type") == "tap" and self.extras.touch(PROJECTS_PAGE, msg.get("widget")):
                 self._dirty = True

@@ -29,7 +29,7 @@ from agents_support import (
 )
 from runs_support import FakeNoMistakes, FakeSsh, detail, detail_state, fake_no_mistakes, run, run_id, run_row, scan
 
-from screenpad_agents import cli, runcard
+from screenpad_agents import cli, runcard, runlist
 from screenpad_agents.config import Remote
 from screenpad_agents.config import Runs as RunsSettings
 from screenpad_agents.fleet import Fleet
@@ -206,13 +206,23 @@ class RemotePageTests(unittest.TestCase):
     def widgets(board):
         return {w["id"]: w for w in board.page(fleet(), board.views(fleet()))["widgets"]}
 
+    def inside(self, board, machine):
+        """Tap the project cell of a machine; its runs are the page then."""
+        cell = next(w for w in self.widgets(board).values() if w.get("text", "").startswith(machine))
+        self.assertTrue(board.navigate(cell["id"]))
+
     def test_every_run_says_which_machine_it_is_on(self):
         board = self.board()
+        heads = [w["text"] for w in self.widgets(board).values() if w["id"].startswith("proj.")]
+        self.assertEqual(heads, ["laptop · 1 active", "desktop · 1 active"])  # two projects, both called api
+        self.inside(board, "desktop")
         texts = {w["label"]: w["text"] for w in self.widgets(board).values() if "label" in w and "text" in w}
         self.assertEqual(texts["fix-remote"], "desktop · running")
+        self.assertNotIn("fm/fix", texts)
+        self.assertTrue(board.navigate("runs.up"))
+        self.inside(board, "laptop")
+        texts = {w["label"]: w["text"] for w in self.widgets(board).values() if "label" in w and "text" in w}
         self.assertEqual(texts["fm/fix"], "laptop · running")
-        heads = [w["text"] for w in self.widgets(board).values() if w["id"].startswith("proj.")]
-        self.assertEqual(heads, ["laptop · 1 active", "desktop · 1 active"])
 
     def test_the_same_repo_path_on_both_machines_is_two_projects(self):
         board = Runs(False, ["desktop"])
@@ -226,6 +236,7 @@ class RemotePageTests(unittest.TestCase):
     def test_without_a_remote_nothing_says_a_machine(self):
         board = Runs()
         board.set_scan(scan([(API, [run(2, "fm/fix", "running")])]))
+        self.inside(board, "1 active")
         cell = self.widgets(board)[widget_id("run.", run_id(2))]
         self.assertEqual(cell["text"], "running")
         self.assertIsNone(board.label(board.scan.projects[0]))
@@ -308,8 +319,26 @@ class RemoteLoopTests(Machine):
             ssh_run=self.ssh,
         )
         if wait:
+            self.goto(rig, "laptop")
             rig.until(lambda: self.text(rig, run_id(2)) is not None)
         return rig
+
+    def goto(self, rig, machine):
+        """Show the runs of a machine's project: leave the one open, tap the other's cell."""
+        ids = lambda: [w.id for w in rig.apps.pages["runs"].widgets] if rig.apps.pages.get("runs") else []  # noqa: E731
+        if runlist.UP in ids():
+            rig.apps.press(rig.client(), "runs", runlist.UP, "tap")
+            rig.until(lambda: runlist.UP not in ids())
+
+        def cell():
+            page = rig.apps.pages.get("runs")
+            widgets = page.widgets if page else []
+            found = [w.id for w in widgets if w.id.startswith("proj.") and w.look.get("text", "").startswith(machine)]
+            return found[0] if found else None
+
+        rig.until(lambda: cell() is not None)
+        rig.apps.press(rig.client(), "runs", cell(), "tap")
+        rig.until(lambda: runlist.UP in ids())
 
     @staticmethod
     def look(rig, wid):
@@ -322,14 +351,16 @@ class RemoteLoopTests(Machine):
 
     def test_the_runs_of_both_machines_are_on_the_page_each_with_its_machine(self):
         rig = self.rig()
-        rig.until(lambda: self.text(rig, run_id(REMOTE_RUN)) == "desktop · running · review")
         self.assertEqual(self.text(rig, run_id(2)), "laptop · running · review")
+        self.goto(rig, "desktop")
+        rig.until(lambda: self.text(rig, run_id(REMOTE_RUN)) == "desktop · running · review")
         self.assertEqual(self.look(rig, widget_id("run.", run_id(REMOTE_RUN)))["label"], "fix-remote")
         self.assertEqual(rig.apps.provided()["runs"]["text"], "2 active")
         self.assertEqual(rig.logged, [])
 
     def test_a_desktop_whose_no_mistakes_cannot_run_is_not_said_to_be_unreachable(self):
         rig = self.rig(remote=self.remote(command=[os.path.join(self.dir, "no-such-no-mistakes")]))
+        rig.apps.press(rig.client(), "runs", runlist.UP, "tap")  # the notice is on the projects page
         rig.until(lambda: self.look(rig, "runs.down.desktop").get("label") == "desktop: no-mistakes unavailable")
         self.assertIn("not found", self.look(rig, "runs.down.desktop")["text"])
         self.assertEqual(rig.apps.provided()["runs"]["text"], "1 active · desktop: no-mistakes unavailable")
@@ -339,18 +370,23 @@ class RemoteLoopTests(Machine):
     def test_an_unreachable_desktop_is_said_on_the_page_and_logged_once(self):
         self.ssh.down = "ssh: connect to host desktop port 22: Connection refused"
         rig = self.rig()
+        rig.apps.press(rig.client(), "runs", runlist.UP, "tap")  # the notice is on the projects page
         rig.until(lambda: self.look(rig, "runs.down.desktop").get("label") == "desktop unreachable")
         self.assertEqual(
             self.look(rig, "runs.down.desktop")["text"], "ssh: connect to host desktop port 22: Connection refused"
         )
         self.assertEqual(rig.apps.provided()["runs"]["text"], "1 active · desktop unreachable")
+        self.goto(rig, "laptop")
         self.assertEqual(self.text(rig, run_id(2)), "laptop · running · review")  # its own runs stay
+        rig.apps.press(rig.client(), "runs", runlist.UP, "tap")
         rig.until(lambda: len(self.ssh.calls) >= 3)
         self.assertEqual(rig.logged, ["desktop unreachable: ssh: connect to host desktop port 22: Connection refused"])
         self.ssh.down = None
+        self.goto(rig, "desktop")
         rig.until(lambda: self.text(rig, run_id(REMOTE_RUN)) == "desktop · running · review")
-        self.assertEqual(self.look(rig, "runs.down.desktop"), {})
         self.assertEqual(rig.logged[-1], "desktop answers again")
+        rig.apps.press(rig.client(), "runs", runlist.UP, "tap")
+        rig.until(lambda: self.look(rig, "runs.down.desktop") == {})
 
     def test_a_slow_desktop_holds_up_nothing_here(self):
         self.ssh.gate = threading.Event()
@@ -362,6 +398,8 @@ class RemoteLoopTests(Machine):
         rig.until(lambda: runcard.LINES in [w.id for w in rig.apps.pages["runs"].widgets])
         self.ssh.gate.set()
         rig.apps.press(client, "runs", runcard.BACK, "tap")
+        rig.until(lambda: runcard.LINES not in [w.id for w in rig.apps.pages["runs"].widgets])
+        self.goto(rig, "desktop")
         rig.until(lambda: self.text(rig, run_id(REMOTE_RUN)) is not None)
 
     def test_the_desktop_is_read_no_more_often_than_this_machine_and_not_while_disconnected(self):
@@ -369,6 +407,7 @@ class RemoteLoopTests(Machine):
         rig.until(lambda: len(self.ssh.calls) >= 6)
         self.state["runs"][self.repo] = [run_row(REMOTE_RUN, "fm/remote-fix", "completed")]
         self.save()
+        self.goto(rig, "desktop")
         rig.until(lambda: self.text(rig, run_id(REMOTE_RUN)) == "desktop · passed")
         rig.until(lambda: rig.apps.provided()["runs"]["text"] == "1 active")
         rig.turn(5)
@@ -392,6 +431,7 @@ class RemoteLoopTests(Machine):
             f.write("import sys\nprint(__name__, sys.argv[1:])\n")
         terminal = ["term", "--title", "Watch {run} on {name}", "-x", "bash -c {command}"]  # only {command} is filled
         rig = self.rig(remote=self.remote(terminal=terminal, script=script))
+        self.goto(rig, "desktop")
         rig.until(lambda: self.text(rig, run_id(REMOTE_RUN)) is not None)
         client = rig.client()
         rig.apps.press(client, "runs", widget_id("run.", run_id(REMOTE_RUN)), "tap")
@@ -421,6 +461,7 @@ class RemoteLoopTests(Machine):
         # A local run's Watch still uses [runs] watch_command.
         rig.apps.press(client, "runs", runcard.BACK, "tap")
         rig.until(lambda: runcard.LINES not in [w.id for w in rig.apps.pages["runs"].widgets])
+        self.goto(rig, "laptop")
         rig.apps.press(client, "runs", widget_id("run.", run_id(2)), "tap")
         rig.until(lambda: runcard.WATCH in [w.id for w in rig.apps.pages["runs"].widgets])
         rig.apps.press(client, "runs", runcard.WATCH, "tap")
@@ -432,6 +473,7 @@ class RemoteLoopTests(Machine):
         with open(script, "w") as f:
             f.write("pass\n")
         rig = self.rig(remote=self.remote(terminal=["term", "{command}"], script=script))
+        self.goto(rig, "desktop")
         rig.until(lambda: self.text(rig, run_id(REMOTE_RUN)) is not None)
         os.remove(script)
         client = rig.client()
@@ -443,6 +485,7 @@ class RemoteLoopTests(Machine):
 
     def test_a_remote_run_has_no_watch_without_a_terminal_and_viewer(self):
         rig = self.rig()
+        self.goto(rig, "desktop")
         rig.until(lambda: self.text(rig, run_id(REMOTE_RUN)) is not None)
         rig.apps.press(rig.client(), "runs", widget_id("run.", run_id(REMOTE_RUN)), "tap")
         rig.until(lambda: runcard.LINES in [w.id for w in rig.apps.pages["runs"].widgets])

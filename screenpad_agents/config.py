@@ -11,6 +11,9 @@ ConfigError naming it.
                                # would, quotes allowed; no shell runs it)
   session = "default"          # the Herdr session the agents run in
   poll = 2                     # seconds between two reads of Herdr
+  agents_page = false          # with [firstmate], also give the Agents page
+                               # (without firstmate it is always given); with
+                               # it on and every page on, the calls page goes
 
   [firstmate]                  # optional: tasks and Captain's Calls
   home = "/path/to/firstmate"  # FM_HOME
@@ -25,12 +28,15 @@ ConfigError naming it.
                                # optional, or a list: opens a change ready
                                # for review ({task} is the task id)
 
-  [usage]                      # optional: the usage-limits tile
+  [usage]                      # optional: the usage-limits tile and page
   command = "quota-axi"        # or a list: a wrapper and its arguments
   poll = 60                    # seconds between two runs, at least 60
+  providers = ["claude"]       # the providers that count (default: every one
+                               # quota-axi can read); the others are ignored
   terminal = ["ptyxis", "--new-window", "-x", "bash -c {command}"]
                                # a terminal window; {command} is what to run
-                               # in it: the tile's tap opens `command --full`
+                               # in it: Details opens firstmate's usage viewer
+                               # (data/tools/usage-view.py), else `command --full`
 
   [runs]                       # optional: the Runs page (no-mistakes runs)
   repos = ["/path/to/repo"]    # repo directories to watch
@@ -84,6 +90,7 @@ MACHINE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,19}")
 SSH_TARGET = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.@:-]{0,127}")
 COMMAND_PLACEHOLDER = "{command}"
 
+PROVIDER = re.compile(r"[a-z0-9][a-z0-9_.-]{0,31}")
 SESSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 BEARINGS = os.path.join("bin", "fm-bearings-snapshot.sh")
 CONTROL = os.path.join("bin", "fm-control.sh")
@@ -99,6 +106,7 @@ class Config:
     None when the config has no [firstmate])."""
 
     __slots__ = (
+        "agents_page",
         "bearings",
         "board",
         "control",
@@ -121,20 +129,22 @@ class Config:
         self.path, self.herdr, self.session, self.herdr_poll = path, herdr, session, herdr_poll
         self.home, self.bearings, self.firstmate_poll, self.control = home, bearings, firstmate_poll, control
         self.board, self.inbox, self.lavish = None, None, list(LAVISH)
+        self.agents_page = False  # [herdr] agents_page: the Agents page with firstmate too
         self.review = None  # the command that opens a change for review, with its {task} word
         self.runs = None
         self.usage = None
 
 
 class Usage:
-    """[usage]: quota-axi's command, the seconds between two runs of it, and
-    the terminal window the tile's tap opens its full report in ({command}
-    is the line to run in it)."""
+    """[usage]: quota-axi's command, the seconds between two runs of it, the
+    terminal window Details opens its viewer in ({command} is the line to run
+    in it) and the providers that count (None: every one quota-axi can read)."""
 
-    __slots__ = ("command", "poll", "terminal")
+    __slots__ = ("command", "poll", "providers", "terminal")
 
-    def __init__(self, command=("quota-axi",), poll=USAGE_POLL, terminal=TERMINAL):
+    def __init__(self, command=("quota-axi",), poll=USAGE_POLL, terminal=TERMINAL, providers=None):
         self.command, self.poll, self.terminal = list(command), poll, list(terminal)
+        self.providers = list(providers) if providers is not None else None
 
 
 class Runs:
@@ -186,13 +196,16 @@ def parse(path, data):
     herdr = _table(path, data, "herdr")
     if herdr is None:
         raise ConfigError("%s: [herdr] is required, with at least its session" % path)
-    _known(path, herdr, {"command", "session", "poll"}, "key in [herdr]")
+    _known(path, herdr, {"command", "session", "poll", "agents_page"}, "key in [herdr]")
     command = _command(path, herdr.get("command", "herdr"), "[herdr] command", "herdr")
     session = herdr.get("session")
     if not isinstance(session, str) or not SESSION.fullmatch(session):
         raise ConfigError('%s: [herdr] session must be a Herdr session name, like "default"' % path)
     herdr_poll = _seconds(path, herdr, "herdr", HERDR_POLL, HERDR_POLL_RANGE)
     config = Config(path, command, session, herdr_poll)
+    config.agents_page = herdr.get("agents_page", False)
+    if not isinstance(config.agents_page, bool):
+        raise ConfigError("%s: [herdr] agents_page must be true or false" % path)
     fm = _table(path, data, "firstmate")
     if fm is not None:
         _known(path, fm, {"home", "code", "poll", "lavish", "review_command"}, "key in [firstmate]")
@@ -219,13 +232,22 @@ def parse(path, data):
 
 
 def _usage(path, table):
-    _known(path, table, {"command", "poll", "terminal"}, "key in [usage]")
+    _known(path, table, {"command", "poll", "terminal", "providers"}, "key in [usage]")
     command = _command(path, table.get("command", "quota-axi"), "[usage] command", "quota-axi")
     poll = _seconds(path, table, "usage", USAGE_POLL, USAGE_POLL_RANGE)
     terminal = _command(path, table.get("terminal", TERMINAL), "[usage] terminal", "ptyxis")
     if not any(COMMAND_PLACEHOLDER in word for word in terminal):
         raise ConfigError("%s: [usage] terminal must hold {command}, where the report's line goes" % path)
-    return Usage(command, poll, terminal)
+    providers = table.get("providers")
+    if providers is not None:
+        names = providers if isinstance(providers, list) else None
+        if not names or not all(isinstance(n, str) and PROVIDER.fullmatch(n) for n in names):
+            raise ConfigError(
+                '%s: [usage] providers must be a list of provider names such as ["claude"]'
+                " (lower case letters, digits, -, _ or .)" % path
+            )
+        providers = list(dict.fromkeys(names))
+    return Usage(command, poll, terminal, providers)
 
 
 def _review(path, value):

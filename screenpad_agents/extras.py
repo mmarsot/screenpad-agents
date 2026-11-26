@@ -6,11 +6,13 @@ threads of their own, so app.py only hands them what happened:
   - the Projects page (projectpage.py, projectwatch.py), with [firstmate]:
     the page, its thread, and what a tap on it means: a change is staged
     in the draft, and Validate asks firstmate for all of them in one note;
-  - the usage tile (usage.py, usagewatch.py), with [usage]: the tile, its
-    thread, and the tap that opens quota-axi's full report.
+  - the usage tile and the Limits page (usage.py, usagepage.py,
+    usagewatch.py), with [usage]: the tile and the page, their thread, and
+    Details, which opens the terminal viewer.
 """
 
-from .common import PROJECTS_PAGE, USAGE_TILE
+from . import usagepage
+from .common import LIMITS_PAGE, PROJECTS_PAGE, USAGE_TILE
 from .projectmodel import note_text
 from .projectpage import Projects
 from .projectwatch import ProjectsWatch
@@ -29,7 +31,7 @@ class Extras:
             self.usage = Usage()
             runs = {"run": usage_run} if usage_run is not None else {}
             launches = {"launcher": usage_launcher} if usage_launcher is not None else {}
-            self.usage_watch = UsageWatch(config.usage, post, clock, **runs, **launches)
+            self.usage_watch = UsageWatch(config.usage, post, clock, **runs, **launches, home=config.home)
 
     def tiles(self):
         return [USAGE_TILE] if self.usage else []
@@ -43,8 +45,13 @@ class Extras:
             if watch is not None:
                 watch.showing(connected)
 
+    def pages(self):
+        """How many pages these give the apps page (the protocol limits an app's)."""
+        return (1 if self.projects else 0) + (1 if self.usage else 0)
+
     def messages(self):
-        return (self.projects.messages() if self.projects else []) + ([self.usage.tile()] if self.usage else [])
+        limits = [self.usage.tile(), usagepage.page(self.usage)] if self.usage else []
+        return (self.projects.messages() if self.projects else []) + limits
 
     def stop(self):
         for watch in (self.projects_watch, self.usage_watch):
@@ -87,7 +94,11 @@ class Extras:
     def touch(self, page, widget):
         """A tap on a page: whether the page changed. A tap on the Projects
         page changes its view, or asks firstmate for a change of a project's
-        settings."""
+        settings; Details on the Limits page opens the viewer."""
+        if page == LIMITS_PAGE:
+            if widget == usagepage.DETAILS and self.usage_watch is not None:
+                self.usage_watch.open_view()
+            return False
         if page != PROJECTS_PAGE or self.projects is None or self.projects_watch is None:
             return False
         changed, changes = self.projects.touch(widget)
@@ -97,6 +108,6 @@ class Extras:
         return changed
 
     def tap_tile(self, tile):
-        """A tap on a tile: the usage tile opens quota-axi's full report."""
+        """A tap on a tile: the usage tile opens the viewer, as Details does."""
         if tile == USAGE_TILE and self.usage_watch is not None:
             self.usage_watch.open_view()

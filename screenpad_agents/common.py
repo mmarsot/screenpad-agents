@@ -19,6 +19,7 @@ RUNS_PAGE = "runs"
 CALLS_PAGE = "calls"
 PROJECTS_PAGE = "projects"
 USAGE_TILE = "usage"
+LIMITS_PAGE = "limits"
 BEARINGS_TILE = "bearings"
 
 CONFIG = ("screenpad", "agents.toml")
@@ -30,6 +31,8 @@ HELM, CAPTAIN, LIGHTHOUSE = "helm", "captain", "lighthouse"
 BACK_ICON, FOCUS_ICON, INTERRUPT_ICON = "back", "spyglass", "anchor"
 PR_ICON = "flag"
 PROJECTS_ICON, GAUGE_ICON, COMPASS_ICON = "projects", "gauge", "compass"
+# The Limits page: a provider's logo (monochrome marks for personal use).
+PROVIDER_ICONS = {"claude": "claude", "codex": "openai"}
 # What the config error points to: install.sh installs no docs.
 DOCS = "https://github.com/mmarsot/screenpad-agents/blob/main/docs/agents.md"
 

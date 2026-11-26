@@ -39,10 +39,14 @@ from .callpage import fit
 from .common import BACK_ICON, PENDING_HOLD, PROJECTS_ICON, PROJECTS_PAGE, icon
 from .projectmodel import BUNDLES, CHOICES, Change, label, reflects
 
-COLUMNS, ROWS, VALUE_ROWS, PER_PAGE = 6, 4, 3, 3
-# Characters in a box: a name's cell (three columns) and its line, a
-# two-column cell's text (two lines), a title.
-NAME_TEXT, WIDE_TEXT, TITLE_TEXT = 50, 66, 100
+COLUMNS, ROWS, VALUE_ROWS = 6, 4, 3
+# The list: projects in cells two columns wide, PER_ROW to a row, LIST_ROWS
+# rows of them, then the row of Previous, the span, Next and the draft's two
+# buttons.
+PER_ROW, LIST_ROWS = 3, 3
+PER_PAGE = PER_ROW * LIST_ROWS
+# Characters in a box: a two-column cell's text (two lines), a title.
+WIDE_TEXT, TITLE_TEXT = 66, 100
 # The settings the project's view lists, in order; Auto-merge and Annotated
 # review are switched by one tap, the others open their values.
 ORDER = ("validation", "auto_merge", "annotated", "where", "model", "effort")
@@ -308,22 +312,23 @@ class Projects:
         many = len(projects) > PER_PAGE
         self.offset = min(self.offset, (len(projects) - 1) // PER_PAGE * PER_PAGE) // PER_PAGE * PER_PAGE
         out = []
-        for row, p in enumerate(projects[self.offset : self.offset + PER_PAGE]):
-            open_ = ("open", p.name)
+        for i, p in enumerate(projects[self.offset : self.offset + PER_PAGE]):
             note = self._note_of(p)
-            name = self._cell("pj." + _hash(p.name), 0, row, 3, p.name, open_, text=fit(note or summary(p), NAME_TEXT))
-            name["tone"] = "warning" if note else "neutral"
-            out += [name] + self._presets(p, 3, row)
-            out.append(self._cell("pj.%s.s" % _hash(p.name), 5, row, 1, "Settings", open_))
+            col, row = 2 * (i % PER_ROW), i // PER_ROW
+            cell = self._cell(
+                "pj." + _hash(p.name), col, row, 2, p.name, ("open", p.name), text=fit(note or summary(p), WIDE_TEXT)
+            )
+            cell["tone"] = "warning" if note else "neutral"
+            out.append(cell)
         if many:
             last = self.offset + PER_PAGE >= len(projects)
             span = "%d-%d of %d" % (self.offset + 1, min(self.offset + PER_PAGE, len(projects)), len(projects))
             out += [
-                self._cell(PREVIOUS, 0, PER_PAGE, 1, "Previous", ("page", -PER_PAGE) if self.offset else None),
-                self._cell("pj.span", 1, PER_PAGE, 1, span),
-                self._cell(NEXT, 2, PER_PAGE, 1, "Next", None if last else ("page", PER_PAGE)),
+                self._cell(PREVIOUS, 0, LIST_ROWS, 1, "Previous", ("page", -PER_PAGE) if self.offset else None),
+                self._cell("pj.span", 1, LIST_ROWS, 1, span),
+                self._cell(NEXT, 2, LIST_ROWS, 1, "Next", None if last else ("page", PER_PAGE)),
             ]
-        return out + self._send_row(PER_PAGE, 3), ROWS
+        return out + self._send_row(LIST_ROWS, 3), ROWS
 
     # --- a project's settings -------------------------------------------------
 

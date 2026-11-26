@@ -268,9 +268,11 @@ def read_calls(path):
         return []
 
 
-def config(firstmate=True, herdr_poll=0.05):
-    """A Config as load() makes it, with Herdr read every herdr_poll s."""
+def config(firstmate=True, herdr_poll=0.05, agents_page=True):
+    """A Config as load() makes it, with Herdr read every herdr_poll s and
+    (agents_page, as most tests drive it) the Agents page given with firstmate."""
     c = Config("agents.toml", ["herdr"], SESSION, herdr_poll)
+    c.agents_page = agents_page
     if firstmate:
         c.home, c.bearings, c.control = "/fm", "/fm/bin/fm-bearings-snapshot.sh", "/fm/bin/fm-control.sh"
     return c

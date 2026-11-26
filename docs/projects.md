@@ -1,6 +1,6 @@
 # The Projects page
 
-**Projects** (`projects`) is a page of the [agent app](agents.md) for the touch bar: firstmate's projects, each with the settings that decide how its work is done, switchable with a tap. It replaces the Agents page on the bar: the Agents page is still there, [one level down](agents.md#the-agents-page).
+**Projects** (`projects`) is a page of the [agent app](agents.md) for the touch bar: firstmate's projects, each with the settings that decide how its work is done, switchable with a tap. It replaces the Agents page on the bar: the Agents page is given only with `[herdr] agents_page = true` ([the Agents page](agents.md#the-agents-page)).
 
 It needs `[firstmate]` in `agents.toml` (the page reads firstmate's home) and nothing else. Without `[firstmate]` there is no Projects page.
 
@@ -10,8 +10,8 @@ The settings are **firstmate's, not the app's**. The app reads them and asks fir
 
 | View | What it shows |
 |---|---|
-| **The list** | three projects to a page, a row each: its name and a line of its settings (`validated · auto-merge · desktop first · opus`), the two presets, **Iterate** and **Refine** (the project's own is green, a drafted one amber), and **Settings**. Under them, **Previous**, the span (`1-3 of 8`) and **Next** (with more than three projects), **Discard** and **Validate**. A tap on the name or on Settings opens the project |
-| **A project's settings** | Back, the project's name and line, the presets, six settings, each in a large cell with its value, and under them the draft in words with **Discard** and **Validate** |
+| **The list** | a grid of project cells, three to a row and three rows (nine to a page): each cell is the project's name with a line of its settings under it (`validated · auto-merge · desktop first · opus`; amber with `draft: Refine` or `asked firstmate: Refine` while a change is staged or pending). The list has no preset or settings buttons: **a tap on a project's cell opens its settings**. Under the grid, **Previous**, the span (`1-9 of 14`) and **Next** (with more than nine projects), **Discard** and **Validate** |
+| **A project's settings** | Back, the project's name and line, the presets (**Iterate** and **Refine**: the project's own is green, a drafted one amber), six settings, each in a large cell with its value, and under them the draft in words with **Discard** and **Validate** |
 | **A setting's values** | large buttons, one per value, the current one green; a tap stages that value and returns to the project's settings |
 
 Auto-merge and Annotated review switch with one tap (the cell shows the value, a tap stages the other); Validation, Runs on, Worker model and Worker effort open their values. The cells are large (a cell of the project's view is two columns wide), the text is short, and nothing on the page moves by itself: the page changes when you tap, when firstmate's files do, and when a change you asked for is there.
@@ -38,7 +38,7 @@ A preset is a **bundle**: tapping **Refine** asks firstmate to turn validation o
 
 ## Staging, then Validate
 
-A tap on a preset or a value **stages** it in the draft and sends nothing. The change shows amber: its cell reads `On → Off, draft`, the project's row says `draft: Refine`, the preset button turns amber, and the page's entry in the home list says `2 projects · 3 to validate` with the number of changes as a badge. Staging the value a setting already has takes it back out of the draft; **Discard** drops the whole draft. A preset staged also changes what the project's cells show (Refine turns Auto-merge to Off in the draft), and a single setting staged after it overrides the bundle.
+A tap on a preset or a value **stages** it in the draft and sends nothing. The change shows amber: its cell reads `On → Off, draft`, the project's cell says `draft: Refine`, the preset button turns amber, and the page's entry in the home list says `2 projects · 3 to validate` with the number of changes as a badge. Staging the value a setting already has takes it back out of the draft; **Discard** drops the whole draft. A preset staged also changes what the project's cells show (Refine turns Auto-merge to Off in the draft), and a single setting staged after it overrides the bundle.
 
 **Validate** sends firstmate **one** note with **every** drafted change of **every** project, with its capture surface:
 
@@ -66,7 +66,7 @@ Each change is `set <project> <setting> to <value>`, with the settings' words:
 
 The project is a name from the registry (letters, digits, `.`, `_`, `-`), and the value one of the table's: nothing else goes into a note. The note wakes firstmate once. It is firstmate that decides what each change means, applies them (a preset's bundle, the registry's tags, the settings file) and records them.
 
-Until the files say so, the changes are **pending**: a cell reads `On → Off, asked`, the project's row says `asked firstmate: Refine`, and the page's entry carries the number of changes asked as a badge. A value already asked is not staged again, and a pending change cannot be taken back from the page. A change stops being pending
+Until the files say so, the changes are **pending**: a cell reads `On → Off, asked`, the project's cell says `asked firstmate: Refine`, and the page's entry carries the number of changes asked as a badge. A value already asked is not staged again, and a pending change cannot be taken back from the page. A change stops being pending
 
 - once the app reads the files and they have it (the app reads every 15 seconds while a change is pending);
 - after 15 minutes, when firstmate has not applied it (the page then shows what the files say, and nothing is retried);

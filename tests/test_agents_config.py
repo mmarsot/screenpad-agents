@@ -40,15 +40,17 @@ class ConfigTests(ConfigFiles):
         c = load(self.write('[herdr]\nsession = "default"\n'))
         self.assertEqual((c.herdr, c.session, c.herdr_poll), (["herdr"], "default", 2.0))
         self.assertIsNone(c.home)
+        self.assertIs(c.agents_page, False)
 
     def test_every_setting(self):
         c = load(
             self.write(
-                '[herdr]\ncommand = ["wrap", "herdr"]\nsession = "lab-1"\npoll = 5\n'
+                '[herdr]\ncommand = ["wrap", "herdr"]\nsession = "lab-1"\npoll = 5\nagents_page = true\n'
                 '[firstmate]\nhome = "%s"\ncode = "%s"\npoll = 120\n' % (self.home, self.code)
             )
         )
         self.assertEqual((c.herdr, c.session, c.herdr_poll), (["wrap", "herdr"], "lab-1", 5.0))
+        self.assertIs(c.agents_page, True)
         self.assertEqual(c.home, self.home)
         self.assertEqual(c.bearings, os.path.join(self.code, "bin", "fm-bearings-snapshot.sh"))
         self.assertEqual(c.control, os.path.join(self.code, "bin", "fm-control.sh"))
@@ -95,6 +97,8 @@ class ConfigTests(ConfigFiles):
             ('[herdr]\nsession = "x"\ncommand = ["herdr", 2]\n', "command must be"),
             ('[herdr]\nsession = "x"\npoll = 0.5\n', "poll must be 1 to 60"),
             ('[herdr]\nsession = "x"\npoll = true\n', "poll must be"),
+            ('[herdr]\nsession = "x"\nagents_page = 1\n', "agents_page must be true or false"),
+            ('[herdr]\nsession = "x"\nagents_page = "yes"\n', "agents_page must be true or false"),
             ('[herdr]\nsession = "x"\n' + fm + "poll = 30\n", "poll must be 60 to 3600"),
             (
                 '[herdr]\nsession = "x"\n[firstmate]\nhome = "rel"\ncode = "%s"\n' % self.code,
@@ -131,7 +135,7 @@ class RunsConfigTests(ConfigFiles):
         base = '[herdr]\nsession = "lab"\n'
         self.assertIsNone(load(self.write(base)).usage)  # off unless it is configured
         u = load(self.write(base + "[usage]\n")).usage
-        self.assertEqual((u.command, u.poll), (["quota-axi"], 60.0))
+        self.assertEqual((u.command, u.poll, u.providers), (["quota-axi"], 60.0, None))  # every provider it can read
         self.assertEqual(u.terminal, ["ptyxis", "--new-window", "-T", "Usage limits", "-x", "bash -c {command}"])
         u = load(
             self.write(
@@ -146,6 +150,8 @@ class RunsConfigTests(ConfigFiles):
             load(self.write(base + '[usage]\ncommand = "quota-axi --no-credential-refresh"\n')).usage.command,
             ["quota-axi", "--no-credential-refresh"],
         )
+        u = load(self.write(base + '[usage]\nproviders = ["claude", "codex", "claude"]\n')).usage
+        self.assertEqual(u.providers, ["claude", "codex"])
 
     def test_usage_errors(self):
         base = '[herdr]\nsession = "lab"\n[usage]\n'
@@ -157,6 +163,10 @@ class RunsConfigTests(ConfigFiles):
             ("command = []\n", r"\[usage\] command must be a program"),
             ('terminal = ["ptyxis"]\n', r"\[usage\] terminal must hold \{command\}"),
             ("view = 1\n", r"unknown key in \[usage\] 'view'"),
+            ("providers = []\n", r"\[usage\] providers must be a list of provider names"),
+            ('providers = "claude"\n', r"\[usage\] providers must be a list of provider names"),
+            ('providers = ["Claude"]\n', r"\[usage\] providers must be a list of provider names"),
+            ("providers = [1]\n", r"\[usage\] providers must be a list of provider names"),
         ):
             with self.assertRaisesRegex(ConfigError, message):
                 load(self.write(base + text))
@@ -304,10 +314,14 @@ class CommandTests(unittest.TestCase):
         quota = write_script(
             os.path.join(self.dir, "quota-axi"),
             """
-            print('quota[1]{provider,scope,effectivePercentRemaining,resetsAt}:')
-            print('  codex,all_models,87,"2026-12-26T10:15:33.000Z"')
-            print('attention[1]{provider,scope,kind,detail,remedy}:')
-            print('  claude,all,auth_required,credentials_invalid,none')
+            import json, sys
+            assert sys.argv[1:] == ["--json"], sys.argv
+            print(json.dumps({"schemaVersion": 5, "providers": [
+                {"provider": "claude", "windows": [],
+                 "state": {"status": "auth_required", "error": "credentials_invalid"}},
+                {"provider": "codex", "windows": [{"id": "window:720h", "percentRemaining": 87,
+                                                   "resetsAt": "2026-12-26T10:15:33.000Z"}]},
+            ]}))
             """,
         )
         path = os.path.join(self.dir, "agents.toml")
@@ -315,10 +329,14 @@ class CommandTests(unittest.TestCase):
             f.write('[herdr]\ncommand = "%s"\nsession = "lab"\n[usage]\ncommand = "%s"\n' % (herdr, quota))
         done = self.agents("show", "--config", path)
         lines = done.stdout.splitlines()
-        self.assertEqual(lines[-1].split(" | ")[1], "claude no data: credentials_invalid")
-        self.assertTrue(lines[-1].startswith("Usage: codex 87% ↻"), lines[-1])
+        usage = next(i for i, line in enumerate(lines) if line.startswith("Usage: "))
+        self.assertEqual(lines[usage].split(" | ")[1], "claude no data: credentials invalid")
+        self.assertTrue(lines[usage].startswith("Usage: codex 87% ↻"), lines[usage])
+        self.assertIn("  codex    30-day window     87% left", lines)
+        self.assertIn("  claude   no data: credentials invalid", lines)
         done = self.agents("show", "--json", "--config", path)
         self.assertIn('"tile": "usage"', done.stdout)
+        self.assertIn('"page": "limits"', done.stdout)
 
 
 class RemoteConfigTests(unittest.TestCase):
