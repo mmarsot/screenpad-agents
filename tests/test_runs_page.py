@@ -83,7 +83,7 @@ class RunsPageTests(unittest.TestCase):
         f = fleet()
         apps = self.accepted(b, f)
         page = apps.pages["runs"]
-        self.assertEqual((page.look["title"], page.look["text"], page.columns, page.rows), ("Runs", "1 active", 6, 2))
+        self.assertEqual((page.look["title"], page.look["text"], page.columns, page.rows), ("Runs", "1 active", 6, 4))
         self.assertEqual(page.look["icon"], LIGHTHOUSE)
         # A cell per project, two columns wide, three to a row, each a tap.
         self.assertEqual(
@@ -98,7 +98,7 @@ class RunsPageTests(unittest.TestCase):
         # A tap on api shows all its runs, the active ones first.
         self.inside(b)
         page = self.accepted(b, f).pages["runs"]
-        self.assertEqual((page.columns, page.rows), (6, 2))
+        self.assertEqual((page.columns, page.rows), (6, 4))
         top = [w for w in page.widgets if w.row == 0]
         self.assertEqual(
             [(w.id, w.look["label"], w.touch) for w in top], [("runs.up", "Back", "tap"), ("runs.title", "api", "none")]
@@ -254,7 +254,7 @@ class RunsPageTests(unittest.TestCase):
         projects = [("/repos/p%d" % n, []) for n in range(13)] + [("/repos/busy", [run(9, "fm/x", "running")])]
         b = self.board(projects, details=[detail(9, "fm/x")])
         f = fleet()
-        # Twelve projects fit the grid; more take pages of nine, the pager under them.
+        # More than nine take pages of nine, the pager under them.
         self.assertEqual(self.labels(b, f, projects=True), ["p%d" % n for n in range(9)])
         self.assertEqual(self.accepted(b, f).pages["runs"].rows, 4)
         cells = self.cells(b, f)
@@ -273,6 +273,36 @@ class RunsPageTests(unittest.TestCase):
         self.assertEqual(self.labels(b, f, row=0), ["Back", "busy"])
         self.assertTrue(b.navigate("runs.up"))
         self.assertEqual(self.labels(b, f, projects=True), ["p9", "p10", "p11", "p12", "busy"])
+
+    def test_the_grid_cells_are_the_same_size_whatever_the_number_on_the_page(self):
+        # One project, a partial page, a full page, a second page and twelve
+        # (ten to twelve used to grow the grid to four rows of projects): the grid is always
+        # four rows, a project's cell two columns by one row at its slot, and
+        # the slots without a project hold nothing.
+        for count in (1, 4, 9, 12):
+            b = self.board([("/repos/p%d" % n, []) for n in range(count)])
+            f = fleet()
+            page = self.accepted(b, f).pages["runs"]
+            self.assertEqual((page.columns, page.rows), (6, 4), count)
+            shown = [w for w in page.widgets if w.id.startswith("proj.")]
+            self.assertEqual(len(shown), min(count, 9), count)
+            self.assertEqual(
+                [(w.col, w.row, w.cols) for w in shown],
+                [(2 * (i % 3), i // 3, 2) for i in range(len(shown))],
+                count,
+            )
+            self.assertEqual({w.touch for w in shown}, {"tap"})
+            self.assertEqual(len(page.widgets), len(shown) + (3 if count > 9 else 0), count)
+        # A project's runs: the same, one run or nine.
+        for count in (1, 5, 9):
+            b = self.board([(API, [run(n, "fm/b%d" % n, "completed") for n in range(count)])])
+            self.inside(b)
+            page = self.accepted(b, fleet()).pages["runs"]
+            self.assertEqual((page.columns, page.rows), (6, 4), count)
+            runs = [w for w in page.widgets if w.row > 0]
+            self.assertEqual(
+                [(w.col, w.row, w.cols) for w in runs], [(2 * (i % 3), 1 + i // 3, 2) for i in range(count)], count
+            )
 
     def test_with_many_machines_down_a_row_of_projects_and_the_pager_still_fit(self):
         # Three or four machines unreachable and more projects than a page: the
@@ -308,8 +338,8 @@ class RunsPageTests(unittest.TestCase):
         self.assertEqual(self.labels(b, f, projects=True), ["p9", "p10", "p11", "p12"])
         self.assertTrue((self.cells(b, f), b.turn("runs.prev"))[1])
         self.assertEqual(self.labels(b, f, projects=True), ["p%d" % n for n in range(9)])
-        # Twelve projects fit one page: no pager, and the offset is forgotten.
-        b = self.board([("/repos/p%d" % n, []) for n in range(12)])
+        # Nine projects fit one page: no pager, and the offset is forgotten.
+        b = self.board([("/repos/p%d" % n, []) for n in range(9)])
         self.assertNotIn("runs.next", self.cells(b, f))
         self.assertFalse(b.turn("runs.next"))
 
