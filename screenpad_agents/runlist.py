@@ -10,7 +10,9 @@ Projects page's list, and both take pages: the projects after the rows a
 remote machine that could not be read takes, with Previous, the span and Next
 in the row under them; a project's runs under its header, whose last two
 cells are Previous and Next. A page's order is the scan's own, so a turn
-never reshuffles it. A widget's id names what a tap on it means (Runs keeps
+never reshuffles it. Both always have MAX_ROWS rows, so a cell is the same
+size whatever the number of items on the page: the positions a page does not
+fill are empty, nothing drawn and nothing to touch. A widget's id names what a tap on it means (Runs keeps
 the maps of the page last built), and a tap on an id no longer drawn does
 nothing.
 """
@@ -81,8 +83,8 @@ def grid(runs, views):
         return [note(runs)], MIN_ROWS
     top = len(cells)
     room = MAX_ROWS - top
-    paged = len(projects) > PER_ROW * room
-    per = PER_ROW * (room - 1) if paged else len(projects)
+    per = PER_ROW * (room - 1)  # the last row of the rows left is the pager's
+    paged = len(projects) > per
     total = len(projects)
     if paged:
         runs.offset = min(runs.offset, (total - 1) // per * per) // per * per
@@ -97,11 +99,9 @@ def grid(runs, views):
         cells.append(
             cell(wid, CELL * (i % PER_ROW), top + i // PER_ROW, CELL, **look, **({"badge": badge} if badge else {}))
         )
-    used = top + -(-len(projects) // PER_ROW)
     if paged:
         cells += pager(runs, top + room - 1, per, total)
-        used = MAX_ROWS
-    return cells, max(MIN_ROWS, used)
+    return cells, MAX_ROWS
 
 
 def pager(runs, row, per, total, offset=None, prefix="runs."):
@@ -197,4 +197,4 @@ def project_view(runs, project, views):
         if v.duplicate:
             look["badge"] = "2+"
         out.append(cell(wid, CELL * (i % PER_ROW), 1 + i // PER_ROW, CELL, **look))
-    return out, max(MIN_ROWS, 1 + -(-len(listed) // PER_ROW))
+    return out, MAX_ROWS
