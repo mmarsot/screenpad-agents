@@ -361,9 +361,7 @@ class Runs:
         paged = len(projects) > room
         if paged:
             # Pages of three rows (the Projects page's), the pager under
-            # them; the projects with runs going (or needing you) first.
-            busy = {p.key for p in projects if any(v.run.active or v.attention for v in views[p.key])}
-            projects = sorted(projects, key=lambda p: p.key not in busy)
+            # them, in the scan's own order so a turn never reshuffles them.
             per = max(1, room - 1)
             self.offset = min(self.offset, (len(projects) - 1) // per * per) // per * per
             total, projects = len(projects), projects[self.offset : self.offset + per]

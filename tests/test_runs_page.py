@@ -176,12 +176,34 @@ class RunsPageTests(unittest.TestCase):
         page = self.accepted(b, fleet()).pages["runs"]
         self.assertEqual(page.rows, 4)
         heads = [w.look["label"] for w in page.widgets if w.col == 0]
-        # Pages of three rows with the pager under them, the busy project first.
-        self.assertEqual(heads, ["busy", "p0", "p1", "Previous"])
+        # Pages of three rows with the pager under them, in the scan's order.
+        self.assertEqual(heads, ["p0", "p1", "p2", "Previous"])
         self.assertEqual(self.cells(b, fleet())["runs.span"].look["label"], "1-3 of 6")
         self.assertEqual(
             (self.cells(b, fleet())["runs.prev"].touch, self.cells(b, fleet())["runs.next"].touch), ("none", "tap")
         )
+        self.assertTrue(b.turn("runs.next"))
+        page = self.accepted(b, fleet()).pages["runs"]
+        self.assertEqual([w.look["label"] for w in page.widgets if w.col == 0], ["p3", "p4", "busy", "Previous"])
+        busy = next(w for w in page.widgets if w.col == 0 and w.look["label"] == "busy")
+        self.assertEqual(busy.look.get("text"), "1 active")
+
+    def test_a_project_starting_a_run_does_not_reshuffle_the_pages(self):
+        projects = [("/repos/p%d" % n, []) for n in range(6)]
+        b = self.board(projects)
+        f = fleet()
+
+        def shown():
+            self.cells(b, f)
+            return [w.look["label"] for w in self.accepted(b, f).pages["runs"].widgets if w.col == 0]
+
+        self.assertTrue((shown(), b.turn("runs.next"))[1])
+        self.assertEqual(shown(), ["p3", "p4", "p5", "Previous"])
+        projects[5] = ("/repos/p5", [run(9, "fm/x", "running")])
+        b.set_scan(scan(projects))
+        self.assertEqual(shown(), ["p3", "p4", "p5", "Previous"])
+        self.assertTrue(b.turn("runs.prev"))
+        self.assertEqual(shown(), ["p0", "p1", "p2", "Previous"])
 
     def test_every_project_is_reachable_through_the_pager(self):
         projects = [("/repos/p%d" % n, []) for n in range(8)]

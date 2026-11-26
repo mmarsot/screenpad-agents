@@ -149,6 +149,33 @@ class BearingsLoopTests(unittest.TestCase):
         self.tap(rig)
         rig.until(lambda: self.firstmate.requests == 2)
 
+    def test_a_rebuilt_board_that_fails_to_open_ends_no_wait(self):
+        rig = self.rig()
+        self.firstmate.board_age_seconds = 3600.0
+        self.tap(rig)
+        rig.until(lambda: self.firstmate.request_texts == [REBUILD_REQUEST])
+        # firstmate rebuilt it, but opening it fails: the wait goes on.
+        self.firstmate.board_age_seconds, self.firstmate.open_error = 0.0, "systemd-run not found"
+        checks = self.firstmate.checks
+        rig.until(lambda: self.firstmate.checks >= checks + 3)
+        rig.turn(10)
+        self.assertEqual(self.tile(rig).get("text"), "asking firstmate…")
+        self.assertFalse(any(line.startswith("firstmate opened the decisions board") for line in rig.logged))
+        self.firstmate.open_error = None
+        rig.until(lambda: self.firstmate.opened == [FakeFirstmate.BOARD])
+        self.assertEqual(self.firstmate.requests, 1)
+
+    def test_a_rebuild_and_a_board_request_never_share_a_request_id(self):
+        rig = self.rig()
+        self.firstmate.board_age_seconds = 3600.0
+        self.tap(rig)
+        rig.until(lambda: self.tile(rig).get("text", "").startswith("no fresh board: tap to retry"), 5)
+        self.firstmate.board = None
+        rig.app.request_board()
+        rig.until(lambda: self.firstmate.requests == 2)
+        self.assertEqual(self.firstmate.request_texts, [REBUILD_REQUEST, None])
+        self.assertNotEqual(self.firstmate.request_ids[0], self.firstmate.request_ids[1])
+
     def test_a_failed_note_is_shown_on_the_tile(self):
         rig = self.rig()
         self.firstmate.board_age_seconds = 3600.0

@@ -65,6 +65,7 @@ class BoardRequest:
         self.busy = set()  # the look ("look") or open ("board") on its way
         self.id = None  # the id of the request a retry repeats
         self.made = None  # when that id was made
+        self.kind = None  # the job that id was made for
         self.since = None  # when the wait for the board began; None: no wait
         self.note = None  # the inbox note waited on, once fm-inbox.sh saved it
         self.reply = None  # what firstmate replied to it
@@ -121,8 +122,8 @@ class BoardRequest:
         if self.waiting():
             return False
         now = self.clock()
-        if self.id is None or now - self.made >= BOARD_REQUEST_HOLD:
-            self.id, self.made = _request_id(), now
+        if self.id is None or self.kind != job[0] or now - self.made >= BOARD_REQUEST_HOLD:
+            self.id, self.made, self.kind = _request_id(), now, job[0]
         self.since, self.note, self.reply, self.replied, self.trouble = now, None, None, None, None
         self.board.set("opening")
         self.control.put((job[0], self.id) + job[1:])
@@ -296,10 +297,10 @@ class BoardRequest:
         try:
             url = self.firstmate.board_url()
             if self._since is not None:
-                if self._rebuilt(url):
+                found, url = url, None  # a board that is not the rebuilt one ends no wait
+                if self._rebuilt(found):
                     self.post("board", self.firstmate.open_board(), None)
                     return
-                url = None  # a board that is not the rebuilt one ends no wait
         except Exception as e:
             errors.append(_why(e, FirstmateError))
         try:
