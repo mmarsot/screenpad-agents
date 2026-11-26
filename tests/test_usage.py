@@ -218,6 +218,12 @@ class WatchTests(unittest.TestCase):
         time.sleep(0.2)
         self.assertEqual(len(reads), 1)
 
+    def test_the_loop_s_every_turn_wakes_the_thread_only_when_the_connection_changes(self):
+        watch = self.watch(None)
+        for connected in (False, True, True, True, False, False):
+            watch.showing(connected)
+        self.assertEqual(list(watch._jobs.queue), [("showing", True), ("showing", False)])
+
     def test_the_tap_opens_the_full_report_in_a_terminal_window(self):
         launched = []
         watch = self.watch(None, UsageSettings(command=["node", "/home/me/bin/quota-axi"]), launched.append)

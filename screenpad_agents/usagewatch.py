@@ -32,6 +32,7 @@ class UsageWatch:
         self.settings, self.post, self.clock, self._run = settings, post, clock, run
         self.launcher = launcher or (lambda argv: desktop.launch(argv, "the usage window"))
         self._jobs: queue.Queue = queue.Queue()
+        self._showing = False
 
     # --- the thread ----------------------------------------------------------
 
@@ -97,7 +98,11 @@ class UsageWatch:
         return [word.replace(COMMAND_PLACEHOLDER, shlex.quote(line)) for word in self.settings.terminal]
 
     def showing(self, connected):
-        self._jobs.put(("showing", connected))
+        """Whether the touch bar is connected: told to the thread when it
+        changes, not at every turn of the loop (the thread then sleeps)."""
+        if connected != self._showing:
+            self._showing = connected
+            self._jobs.put(("showing", connected))
 
     def open_view(self):
         self._jobs.put(("open",))
