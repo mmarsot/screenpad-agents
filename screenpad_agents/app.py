@@ -60,6 +60,7 @@ from .common import (
     RECONNECT,
     RUNS_PAGE,
     RUNS_TILE,
+    USAGE_TILE,
 )
 from .common import why as _why
 from .extras import Extras
@@ -325,7 +326,7 @@ class App:
             for tile in msg.get("unplaced") or []:
                 # Optional ones: page = "calls" is what the bar needs for
                 # Captain's Call, and the agents and bearings tiles may stay off it.
-                if tile in (CALLS_TILE, FLEET_TILE, BEARINGS_TILE):
+                if tile in (CALLS_TILE, FLEET_TILE, BEARINGS_TILE, USAGE_TILE):
                     continue
                 self.log('tile "%s" has no spot; give it one with tile = "%s" in touchbar.toml' % (tile, tile))
             for tile in msg.get("taken") or []:

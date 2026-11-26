@@ -13,7 +13,9 @@ from unittest import mock
 
 from agents_support import REPO, VENDOR, FakeFirstmate, FakeHerdr, Rig, config, fake_herdr, task, write_json
 from bar_support import Apps, AppServer, pump
+from runs_support import FakeNoMistakes
 
+from screenpad_agents.config import Runs as RunsSettings
 from screenpad_agents.config import Usage as UsageSettings
 from screenpad_agents.herdr import Agent
 
@@ -148,13 +150,14 @@ class AppTests(unittest.TestCase):
     def test_welcome_and_errors_are_logged(self):
         cfg = config()
         cfg.usage = UsageSettings()
-        rig = Rig(self, self.herdr, self.firstmate, cfg)
+        cfg.runs = RunsSettings([], False)
+        rig = Rig(self, self.herdr, self.firstmate, cfg, nomistakes=FakeNoMistakes())
         rig.apps.set_placed([])
         rig.until(lambda: any("has no spot" in line for line in rig.logged))
-        self.assertIn('tile "usage" has no spot; give it one with tile = "usage" in touchbar.toml', rig.logged)
-        # Captain's Call goes on the bar as its page (page = "calls"), and the
-        # agents and bearings tiles may stay off it: no advice to place them.
-        for tile in ("calls", "agents", "bearings"):
+        self.assertIn('tile "runs" has no spot; give it one with tile = "runs" in touchbar.toml', rig.logged)
+        # Captain's Call and the Limits page go on the bar as pages (page = "calls", page = "limits"),
+        # and the agents and bearings tiles may stay off it: no advice to place them.
+        for tile in ("calls", "agents", "bearings", "usage"):
             self.assertEqual([line for line in rig.logged if '"%s"' % tile in line], [])
         rig.app.handle({"op": "error", "request": "page", "message": "the apps page is full (8 pages)"})
         self.assertEqual(rig.logged[-1], "the touch bar refused page: the apps page is full (8 pages)")
