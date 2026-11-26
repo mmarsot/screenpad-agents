@@ -30,6 +30,12 @@ from screenpad_agents.firstmate import Bearings, FirstmateError, Task
 from screenpad_agents.herdr import Agent, HerdrError
 
 SESSION = "lab"
+# A registry of firstmate's projects: two active, one archived.
+PROJECTS = """\
+- api [no-mistakes +yolo] - the API (added 2026-07-29)
+- site [direct-PR] - the web site (added 2026-08-01)
+- old [local-only] - ARCHIVED local-only: replaced by api (added 2026-01-01)
+"""
 
 
 def agent_item(pane, state="idle", kind="claude", cwd="/work/api", seq=2):
@@ -359,6 +365,10 @@ class FakeFirstmate:
         self.opened = []
         self.release = None
         self.request_ids = []
+        self.request_texts: list = []
+        self.board_age_seconds = 5.0
+        self.open_error = None
+        self.notes: list = []
         self.acknowledged = set()
         self.request_error = None
         self.receipts: dict = {}
@@ -376,6 +386,17 @@ class FakeFirstmate:
             raise FirstmateError(self.board_error)
         return self.board
 
+    def board_age(self):
+        if self.board_error:
+            raise FirstmateError(self.board_error)
+        return self.board_age_seconds
+
+    def note(self, request_id, text):
+        self.notes.append((request_id, text))
+        if self.request_error:
+            raise FirstmateError(self.request_error)
+        return ("created", NOTE)
+
     def receipt(self, note_id):
         self.checks += 1
         if self.receipt_error:
@@ -390,6 +411,8 @@ class FakeFirstmate:
             raise self.board_error if isinstance(self.board_error, Exception) else FirstmateError(self.board_error)
         if self.board is None:
             return None
+        if self.open_error:
+            raise FirstmateError(self.open_error)
         self.opened.append(self.board)
         return self.board
 
@@ -397,8 +420,9 @@ class FakeFirstmate:
     def requests(self):
         return len(self.request_ids)
 
-    def request_board(self, request_id):
+    def request_board(self, request_id, text=None):
         self.request_ids.append(request_id)
+        self.request_texts.append(text)
         if self.request_error:
             raise FirstmateError(self.request_error)
         if request_id in self.acknowledged:
@@ -441,7 +465,14 @@ class Rig:
         test.addCleanup(tmp.cleanup)
         self.path = os.path.join(tmp.name, "screenpad", "touchbar.sock")
         self.logged = []
-        self.app = App(cfg or config(firstmate is not None), herdr, firstmate, self.path, log=self.logged.append, **app)
+        cfg = cfg or config(firstmate is not None)
+        if cfg.home and not os.path.isdir(cfg.home):
+            # A firstmate home the Projects page can read: a registry, no settings.
+            cfg.home = os.path.join(tmp.name, "fm")
+            os.makedirs(os.path.join(cfg.home, "data"))
+            with open(os.path.join(cfg.home, "data", "projects.md"), "w") as f:
+                f.write(PROJECTS)
+        self.app = App(cfg, herdr, firstmate, self.path, log=self.logged.append, **app)
         test.addCleanup(self.app.close)
         self.server = None
         self.apps = None
@@ -452,7 +483,7 @@ class Rig:
 
     def serve(self):
         self.apps = Apps()
-        self.apps.set_placed(["agents", "calls", "runs"])
+        self.apps.set_placed(["agents", "calls", "bearings", "runs", "usage"])
         self.server = AppServer(self.path, self.apps)
         handle = self.apps.handle
 

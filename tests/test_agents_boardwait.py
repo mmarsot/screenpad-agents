@@ -57,7 +57,7 @@ class BoardWaitTests(unittest.TestCase):
         # firstmate's note takes a while: the button and the widget say the
         # board is opening before it is saved.
         release, answer = threading.Event(), self.firstmate.request_board
-        self.firstmate.request_board = lambda rid: release.wait(5) and answer(rid)  # type: ignore[method-assign]
+        self.firstmate.request_board = lambda rid, text=None: release.wait(5) and answer(rid, text)  # type: ignore[method-assign]
         reads = self.firstmate.reads
         self.request(rig)
         rig.until(lambda: self.button(rig) == OPENING)

@@ -58,11 +58,30 @@ class RunsLoopTests(unittest.TestCase):
 
     def test_the_page_and_tile_joined_to_the_agent_and_its_task(self):
         rig = self.rig()
-        self.assertEqual(rig.handled[0]["tiles"], ["agents", "calls", "runs"])
+        self.assertEqual(rig.handled[0]["tiles"], ["agents", "calls", "bearings", "runs"])
         tile = rig.apps.provided()["runs"]
         self.assertEqual((tile["text"], tile["badge"], tile["tone"]), ("1 active · 1 needs you", "1", "warning"))
         self.assertIn(("current", COPY), self.nm.calls)  # the task's worktree and the agent's cwd
         self.assertEqual(rig.logged, [])
+
+    def test_every_project_is_reachable_through_the_pager_in_the_loop(self):
+        extra = ["/repos/p%d" % n for n in range(5)]
+        for repo in extra:
+            self.nm.dirs[repo] = (repo, "main", None)
+            self.nm.runs[repo] = []
+        cfg = config(herdr_poll=0.05)
+        cfg.runs = RunsSettings([API] + extra, True, poll=0.05, idle=60.0)
+        rig = Rig(self, self.herdr, self.firstmate, cfg=cfg, nomistakes=self.nm)
+
+        def heads():
+            page = rig.apps.pages.get("runs")
+            return [w.look["label"] for w in page.widgets if w.col == 0] if page else []
+
+        rig.until(lambda: heads() == ["api", "p0", "p1", "Previous"])
+        rig.apps.press(rig.client(), "runs", "runs.next", "tap")
+        rig.until(lambda: heads() == ["p2", "p3", "p4", "Previous"])
+        rig.apps.press(rig.client(), "runs", "runs.prev", "tap")
+        rig.until(lambda: heads() == ["api", "p0", "p1", "Previous"])
 
     def test_a_tap_opens_the_runs_card_and_focus_focuses_its_agent(self):
         rig = self.rig()

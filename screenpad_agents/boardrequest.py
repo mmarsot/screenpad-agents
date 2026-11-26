@@ -35,26 +35,37 @@ for BOARD_REQUEST_HOLD, so trying again meanwhile replays a note
 fm-inbox.sh may have saved rather than queueing a second; later a retry is
 a new request. A replay of a note firstmate already handled wakes nothing,
 so the same job asks again at once under a new id.
+
+Bearings (rebuild, the bearings tile) is the one-tap form of all this: a
+board that is open and was built within BOARD_FRESH seconds (its file's age)
+is opened at once; otherwise firstmate is asked, with its own note, to
+rebuild it, and the wait ends by opening the board, not by saying it is
+ready, as soon as it is open and its file is newer than the request.
 """
 
 import secrets
 import time
 
 from . import callpage
-from .common import BOARD_POLL, BOARD_REPLY_GRACE, BOARD_REQUEST_HOLD, BOARD_WAIT
+from .common import BOARD_FRESH, BOARD_POLL, BOARD_REPLY_GRACE, BOARD_REQUEST_HOLD, BOARD_WAIT
 from .common import why as _why
-from .firstmate import FirstmateError
+from .firstmate import REBUILD_REQUEST, FirstmateError
+
+# How much older than the request a board's file may be, and still be the one
+# firstmate rebuilt for it (seconds: clocks and file times are coarse).
+REBUILT_SLACK = 2.0
 
 
 class BoardRequest:
-    def __init__(self, firstmate, control, post, log, refresh, clock):
+    def __init__(self, firstmate, control, post, log, refresh, clock, wall=time.time):
         self.firstmate, self.control, self.post = firstmate, control, post
-        self.log, self.refresh, self.clock = log, refresh, clock
+        self.log, self.refresh, self.clock, self.wall = log, refresh, clock, wall
         # The loop's side.
         self.board = callpage.Board()  # what the page's button shows
         self.busy = set()  # the look ("look") or open ("board") on its way
         self.id = None  # the id of the request a retry repeats
         self.made = None  # when that id was made
+        self.kind = None  # the job that id was made for
         self.since = None  # when the wait for the board began; None: no wait
         self.note = None  # the inbox note waited on, once fm-inbox.sh saved it
         self.reply = None  # what firstmate replied to it
@@ -64,6 +75,7 @@ class BoardRequest:
         self.poll = BOARD_POLL
         self._watching = None  # the note whose board it checks for
         self._due = 0.0
+        self._since = None  # when Bearings asked (wall clock): the board it opens is newer
 
     # --- the loop's side -----------------------------------------------------
 
@@ -98,14 +110,23 @@ class BoardRequest:
     def request(self):
         """Ask firstmate for the board with one note, unless the app waits
         for one already; True if the page changed."""
+        return self._begin(("request",))
+
+    def rebuild(self):
+        """Bearings: open the board when it is open and fresh, else ask
+        firstmate to rebuild it and open it once it is; True if the page
+        changed (nothing happens while a wait is on)."""
+        return self._begin(("rebuild", self.wall()))
+
+    def _begin(self, job):
         if self.waiting():
             return False
         now = self.clock()
-        if self.id is None or now - self.made >= BOARD_REQUEST_HOLD:
-            self.id, self.made = _request_id(), now
+        if self.id is None or self.kind != job[0] or now - self.made >= BOARD_REQUEST_HOLD:
+            self.id, self.made, self.kind = _request_id(), now, job[0]
         self.since, self.note, self.reply, self.replied, self.trouble = now, None, None, None, None
         self.board.set("opening")
-        self.control.put(("request", self.id))
+        self.control.put((job[0], self.id) + job[1:])
         return True
 
     def result(self, what, *rest):
@@ -208,7 +229,10 @@ class BoardRequest:
             except Exception as e:
                 self.post(what, None, _why(e, FirstmateError))
         elif what == "request":
+            self._since = None
             self._request(job[1])
+        elif what == "rebuild":
+            self._rebuild(job[1], job[2])
         elif what == "watch":
             self._watching, self._due = job[1], self.clock() + self.poll
         elif what == "check":
@@ -227,22 +251,56 @@ class BoardRequest:
         if url is not None:
             self.post("look", url, None)
             return
+        self._ask(request_id)
+
+    def _rebuild(self, request_id, since):
+        self._since = since
         try:
-            note = self.firstmate.request_board(request_id)
+            fresh = self.firstmate.board_url() is not None and self.firstmate.board_age() <= BOARD_FRESH
+        except Exception:
+            fresh = False  # it cannot be told to be: ask firstmate
+        if fresh:
+            try:
+                url = self.firstmate.open_board()
+            except Exception as e:
+                self.post("requested", request_id, None, _why(e, FirstmateError))
+                return
+            if url is not None:
+                self.post("board", url, None)
+                return
+        self._ask(request_id, REBUILD_REQUEST)
+
+    def _ask(self, request_id, text=None):
+        """Ask firstmate with one note; text None is the board request's."""
+        args = () if text is None else (text,)
+        try:
+            note = self.firstmate.request_board(request_id, *args)
             if note is None:
                 request_id = _request_id()
-                note = self.firstmate.request_board(request_id)
+                note = self.firstmate.request_board(request_id, *args)
             if note is None:
                 raise FirstmateError("fm-inbox.sh says a new request was handled already")
             self.post("requested", request_id, note, None)
         except Exception as e:
             self.post("requested", request_id, None, _why(e, FirstmateError))
 
+    def _rebuilt(self, url):
+        """Whether the board, open at url (None: it is not), was rebuilt by
+        firstmate since Bearings asked (its file is newer than the ask)."""
+        if url is None:
+            return False
+        return self.firstmate.board_age() <= max(0.0, self.wall() - self._since) + REBUILT_SLACK
+
     def _check(self, note):
         url = receipt = None
         errors = []
         try:
             url = self.firstmate.board_url()
+            if self._since is not None:
+                found, url = url, None  # a board that is not the rebuilt one ends no wait
+                if self._rebuilt(found):
+                    self.post("board", self.firstmate.open_board(), None)
+                    return
         except Exception as e:
             errors.append(_why(e, FirstmateError))
         try:

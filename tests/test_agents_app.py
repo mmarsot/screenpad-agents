@@ -11,9 +11,10 @@ import time
 import unittest
 from unittest import mock
 
-from agents_support import REPO, VENDOR, FakeFirstmate, FakeHerdr, Rig, fake_herdr, task, write_json
+from agents_support import REPO, VENDOR, FakeFirstmate, FakeHerdr, Rig, config, fake_herdr, task, write_json
 from bar_support import Apps, AppServer, pump
 
+from screenpad_agents.config import Usage as UsageSettings
 from screenpad_agents.herdr import Agent
 
 
@@ -30,7 +31,9 @@ class AppTests(unittest.TestCase):
 
     def test_hello_page_and_tiles(self):
         rig = self.rig()
-        self.assertEqual(rig.handled[0], {"op": "hello", "app": "agents", "tiles": ["agents", "calls"], "protocol": 2})
+        self.assertEqual(
+            rig.handled[0], {"op": "hello", "app": "agents", "tiles": ["agents", "calls", "bearings"], "protocol": 2}
+        )
         self.assertEqual(rig.apps.provided()["agents"]["badge"], "1")
         self.assertEqual(rig.apps.pages["agents"].widgets[1].look["label"], "fix-api")
         self.assertEqual(rig.logged, [])
@@ -143,13 +146,16 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.firstmate.reads, 0)
 
     def test_welcome_and_errors_are_logged(self):
-        rig = Rig(self, self.herdr, self.firstmate)
+        cfg = config()
+        cfg.usage = UsageSettings()
+        rig = Rig(self, self.herdr, self.firstmate, cfg)
         rig.apps.set_placed([])
         rig.until(lambda: any("has no spot" in line for line in rig.logged))
-        self.assertIn('tile "agents" has no spot; give it one with tile = "agents" in touchbar.toml', rig.logged)
-        # Captain's Call goes on the bar as its page (page = "calls"): an
-        # unplaced calls tile is no mistake, and gets no advice to place it.
-        self.assertEqual([line for line in rig.logged if '"calls"' in line], [])
+        self.assertIn('tile "usage" has no spot; give it one with tile = "usage" in touchbar.toml', rig.logged)
+        # Captain's Call goes on the bar as its page (page = "calls"), and the
+        # agents and bearings tiles may stay off it: no advice to place them.
+        for tile in ("calls", "agents", "bearings"):
+            self.assertEqual([line for line in rig.logged if '"%s"' % tile in line], [])
         rig.app.handle({"op": "error", "request": "page", "message": "the apps page is full (8 pages)"})
         self.assertEqual(rig.logged[-1], "the touch bar refused page: the apps page is full (8 pages)")
 

@@ -61,9 +61,11 @@ class Runs:
         self.error = None
         self.card = None
         self.down: dict = {}
+        self.offset = 0  # the first project of the page shown, when projects take pages
         self._mine: Scan | None = None
         self._theirs: dict = {}
         self._runs: dict = {}
+        self._turns: dict = {}
         self._real: dict = {}
 
     def set_scan(self, scan, error=None):
@@ -204,6 +206,15 @@ class Runs:
         """The run id a run widget of the page last built stands for."""
         return self._runs.get(widget)
 
+    def turn(self, widget):
+        """A tap on Previous or Next of the page last built: True if the
+        page turned."""
+        step = self._turns.get(widget)
+        if step is None:
+            return False
+        self.offset = max(0, self.offset + step)
+        return True
+
     def open_card(self, run_id):
         self.card = runcard.RunCard(run_id) if self.find(run_id) is not None else None
         return self.card
@@ -340,30 +351,48 @@ class Runs:
         return review, reviews.entry(review), reviews.can_open
 
     def _grid(self, views):
-        self._runs = {}
+        self._runs, self._turns = {}, {}
         projects = self.scan.projects if self.scan else []
         # A machine that could not be read comes first, a row of its own.
         top = [self._down(row, name, *down) for row, (name, down) in enumerate(self.down.items())]
         if not projects and not top:
             return [self._note()], MIN_ROWS
         room = MAX_ROWS - len(top)
-        if len(projects) > room:
-            # The projects with runs going (or needing you) first.
-            busy = {p.key for p in projects if any(v.run.active or v.attention for v in views[p.key])}
-            projects = sorted(projects, key=lambda p: p.key not in busy)
-            hidden = len(projects) - room + 1
-            projects = projects[: room - 1]
+        paged = len(projects) > room
+        if paged:
+            # Pages of three rows (the Projects page's), the pager under
+            # them, in the scan's own order so a turn never reshuffles them.
+            per = max(1, room - 1)
+            self.offset = min(self.offset, (len(projects) - 1) // per * per) // per * per
+            total, projects = len(projects), projects[self.offset : self.offset + per]
         else:
-            hidden = 0
+            self.offset = 0
         cells = [c for row in top for c in row]
         for row, p in enumerate(projects, start=len(top)):
             cells += self._row(row, p, views[p.key])
         used = len(top) + len(projects)
-        rows = max(MIN_ROWS, used + (1 if hidden else 0))
-        if hidden:
-            more = {"id": "runs.more", "col": 0, "row": used, "cols": COLUMNS, "touch": "none"}
-            cells.append(dict(more, label="+%d more projects" % hidden))
-        return cells, rows
+        if paged:
+            cells += self._pager(used, per, total)
+        return cells, MAX_ROWS if paged else max(MIN_ROWS, used)
+
+    def _pager(self, row, per, total):
+        """Previous, the span shown and Next, in the row under the projects."""
+        last = self.offset + per >= total
+        span = "%d-%d of %d" % (self.offset + 1, min(self.offset + per, total), total)
+        cells = [
+            {"id": "runs.prev", "col": 0, "row": row, "cols": 2, "label": "Previous"},
+            {"id": "runs.span", "col": 2, "row": row, "cols": 1, "label": span, "touch": "none"},
+            {"id": "runs.next", "col": 3, "row": row, "cols": 2, "label": "Next"},
+        ]
+        if self.offset:
+            self._turns["runs.prev"] = -per
+        else:
+            cells[0]["touch"] = "none"
+        if last:
+            cells[2]["touch"] = "none"
+        else:
+            self._turns["runs.next"] = per
+        return cells
 
     def _down(self, row, name, notice, why):
         """The row that says a remote machine could not be read, and why:

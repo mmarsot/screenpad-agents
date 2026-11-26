@@ -224,6 +224,8 @@ class RunsWatch:
             if widget == WATCH:
                 return self._watch(), None
             return False, board.card_pane(fleet) if widget == FOCUS else None
+        if board.turn(widget):
+            return True, None
         run_id = board.run_of(widget)
         if run_id is not None and board.open_card(run_id) is not None:
             self._watch_card(run_id)

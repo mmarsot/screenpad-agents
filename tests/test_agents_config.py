@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-from agents_support import REPO, fake_bearings, fake_herdr, read_calls, write_json
+from agents_support import REPO, fake_bearings, fake_herdr, read_calls, write_json, write_script
 
 from screenpad_agents.cli import clients
 from screenpad_agents.common import ConfigError
@@ -127,6 +127,42 @@ class ConfigTests(ConfigFiles):
 class RunsConfigTests(ConfigFiles):
     """[runs]: the Runs page's opt-in and settings."""
 
+    def test_usage(self):
+        base = '[herdr]\nsession = "lab"\n'
+        self.assertIsNone(load(self.write(base)).usage)  # off unless it is configured
+        u = load(self.write(base + "[usage]\n")).usage
+        self.assertEqual((u.command, u.poll), (["quota-axi"], 60.0))
+        self.assertEqual(u.terminal, ["ptyxis", "--new-window", "-T", "Usage limits", "-x", "bash -c {command}"])
+        u = load(
+            self.write(
+                base + '[usage]\ncommand = ["node", "/x/quota-axi"]\npoll = 300\n'
+                'terminal = ["kitty", "-e", "bash -c {command}"]\n'
+            )
+        ).usage
+        self.assertEqual(
+            (u.command, u.poll, u.terminal), (["node", "/x/quota-axi"], 300.0, ["kitty", "-e", "bash -c {command}"])
+        )
+        self.assertEqual(
+            load(self.write(base + '[usage]\ncommand = "quota-axi --no-credential-refresh"\n')).usage.command,
+            ["quota-axi", "--no-credential-refresh"],
+        )
+
+    def test_usage_errors(self):
+        base = '[herdr]\nsession = "lab"\n[usage]\n'
+        for text, message in (
+            ("poll = 30\n", r"\[usage\] poll must be 60 to 3600 seconds"),
+            ("poll = 7200\n", r"\[usage\] poll must be 60 to 3600 seconds"),
+            ('poll = "1m"\n', r"\[usage\] poll must be"),
+            ('command = ""\n', r"\[usage\] command must be a program"),
+            ("command = []\n", r"\[usage\] command must be a program"),
+            ('terminal = ["ptyxis"]\n', r"\[usage\] terminal must hold \{command\}"),
+            ("view = 1\n", r"unknown key in \[usage\] 'view'"),
+        ):
+            with self.assertRaisesRegex(ConfigError, message):
+                load(self.write(base + text))
+        with self.assertRaisesRegex(ConfigError, "unknown table 'projects'"):
+            load(self.write('[herdr]\nsession = "lab"\n[projects]\n'))
+
     def test_runs(self):
         fm = '[firstmate]\nhome = "%s"\ncode = "%s"\n' % (self.home, self.code)
         c = load(self.write('[herdr]\nsession = "lab"\n'))
@@ -238,6 +274,9 @@ class CommandTests(unittest.TestCase):
                 '[herdr]\ncommand = "%s"\nsession = "lab"\n[firstmate]\nhome = "%s"\ncode = "%s"\n'
                 % (herdr, self.dir, code)
             )
+        os.makedirs(os.path.join(self.dir, "data"))
+        with open(os.path.join(self.dir, "data", "projects.md"), "w") as f:
+            f.write("- api [no-mistakes +yolo] - the API\n- site [direct-PR] - the site\n")
         done = self.agents("show", "--config", path)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(
@@ -247,15 +286,39 @@ class CommandTests(unittest.TestCase):
                 "  w1:p1    claude   blocked    fix-api",
                 "  w2:p1    codex    working    -",
                 "Captain's Call: 2 waiting",
+                "Projects: api (validated · auto-merge · desktop first · opus), "
+                "site (plain PR · you merge · desktop first · opus)",
             ],
         )
         done = self.agents("show", "--json", "--config", path)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn('"page": "agents"', done.stdout)
+        self.assertIn('"page": "projects"', done.stdout)
         write_json(os.path.join(self.dir, "agents.json"), "down")
         done = self.agents("show", "--config", path)
         self.assertEqual(done.returncode, 1)
         self.assertIn("Herdr unavailable", done.stdout)
+
+    def test_show_runs_quota_axi_for_the_usage_tile(self):
+        herdr = fake_herdr(self.dir)
+        quota = write_script(
+            os.path.join(self.dir, "quota-axi"),
+            """
+            print('quota[1]{provider,scope,effectivePercentRemaining,resetsAt}:')
+            print('  codex,all_models,87,"2026-12-26T10:15:33.000Z"')
+            print('attention[1]{provider,scope,kind,detail,remedy}:')
+            print('  claude,all,auth_required,credentials_invalid,none')
+            """,
+        )
+        path = os.path.join(self.dir, "agents.toml")
+        with open(path, "w") as f:
+            f.write('[herdr]\ncommand = "%s"\nsession = "lab"\n[usage]\ncommand = "%s"\n' % (herdr, quota))
+        done = self.agents("show", "--config", path)
+        lines = done.stdout.splitlines()
+        self.assertEqual(lines[-1].split(" | ")[1], "claude no data: credentials_invalid")
+        self.assertTrue(lines[-1].startswith("Usage: codex 87% ↻"), lines[-1])
+        done = self.agents("show", "--json", "--config", path)
+        self.assertIn('"tile": "usage"', done.stdout)
 
 
 class RemoteConfigTests(unittest.TestCase):

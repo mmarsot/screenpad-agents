@@ -25,6 +25,13 @@ ConfigError naming it.
                                # optional, or a list: opens a change ready
                                # for review ({task} is the task id)
 
+  [usage]                      # optional: the usage-limits tile
+  command = "quota-axi"        # or a list: a wrapper and its arguments
+  poll = 60                    # seconds between two runs, at least 60
+  terminal = ["ptyxis", "--new-window", "-x", "bash -c {command}"]
+                               # a terminal window; {command} is what to run
+                               # in it: the tile's tap opens `command --full`
+
   [runs]                       # optional: the Runs page (no-mistakes runs)
   repos = ["/path/to/repo"]    # repo directories to watch
   firstmate = true             # also firstmate's projects and task copies
@@ -68,6 +75,8 @@ from .common import (
     RUNS_POLL,
     RUNS_POLL_RANGE,
     TASK_PLACEHOLDER,
+    USAGE_POLL,
+    USAGE_POLL_RANGE,
     ConfigError,
 )
 
@@ -81,6 +90,7 @@ CONTROL = os.path.join("bin", "fm-control.sh")
 BOARD = os.path.join("bin", "fm-bearings-board.sh")
 INBOX = os.path.join("bin", "fm-inbox.sh")
 LAVISH = ["lavish-axi"]
+TERMINAL = ["ptyxis", "--new-window", "-T", "Usage limits", "-x", "bash -c " + COMMAND_PLACEHOLDER]
 
 
 class Config:
@@ -102,6 +112,7 @@ class Config:
         "review",
         "runs",
         "session",
+        "usage",
     )
 
     def __init__(
@@ -112,6 +123,18 @@ class Config:
         self.board, self.inbox, self.lavish = None, None, list(LAVISH)
         self.review = None  # the command that opens a change for review, with its {task} word
         self.runs = None
+        self.usage = None
+
+
+class Usage:
+    """[usage]: quota-axi's command, the seconds between two runs of it, and
+    the terminal window the tile's tap opens its full report in ({command}
+    is the line to run in it)."""
+
+    __slots__ = ("command", "poll", "terminal")
+
+    def __init__(self, command=("quota-axi",), poll=USAGE_POLL, terminal=TERMINAL):
+        self.command, self.poll, self.terminal = list(command), poll, list(terminal)
 
 
 class Runs:
@@ -159,7 +182,7 @@ def load(path):
 
 
 def parse(path, data):
-    _known(path, data, {"herdr", "firstmate", "runs"}, "table")
+    _known(path, data, {"herdr", "firstmate", "runs", "usage"}, "table")
     herdr = _table(path, data, "herdr")
     if herdr is None:
         raise ConfigError("%s: [herdr] is required, with at least its session" % path)
@@ -189,7 +212,20 @@ def parse(path, data):
     runs = _table(path, data, "runs")
     if runs is not None:
         config.runs = _runs(path, runs, config.home is not None)
+    usage = _table(path, data, "usage")
+    if usage is not None:
+        config.usage = _usage(path, usage)
     return config
+
+
+def _usage(path, table):
+    _known(path, table, {"command", "poll", "terminal"}, "key in [usage]")
+    command = _command(path, table.get("command", "quota-axi"), "[usage] command", "quota-axi")
+    poll = _seconds(path, table, "usage", USAGE_POLL, USAGE_POLL_RANGE)
+    terminal = _command(path, table.get("terminal", TERMINAL), "[usage] terminal", "ptyxis")
+    if not any(COMMAND_PLACEHOLDER in word for word in terminal):
+        raise ConfigError("%s: [usage] terminal must hold {command}, where the report's line goes" % path)
+    return Usage(command, poll, terminal)
 
 
 def _review(path, value):

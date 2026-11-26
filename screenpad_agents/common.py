@@ -17,6 +17,9 @@ PAGE = "agents"
 RUNS_TILE = "runs"
 RUNS_PAGE = "runs"
 CALLS_PAGE = "calls"
+PROJECTS_PAGE = "projects"
+USAGE_TILE = "usage"
+BEARINGS_TILE = "bearings"
 
 CONFIG = ("screenpad", "agents.toml")
 # The app's icons: SVGs in icons/ next to the package, in the checkout as in
@@ -26,6 +29,7 @@ ICONS = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))
 HELM, CAPTAIN, LIGHTHOUSE = "helm", "captain", "lighthouse"
 BACK_ICON, FOCUS_ICON, INTERRUPT_ICON = "back", "spyglass", "anchor"
 PR_ICON = "flag"
+PROJECTS_ICON, GAUGE_ICON, COMPASS_ICON = "projects", "gauge", "compass"
 # What the config error points to: install.sh installs no docs.
 DOCS = "https://github.com/mmarsot/screenpad-agents/blob/main/docs/agents.md"
 
@@ -52,6 +56,22 @@ NO_MISTAKES_TIMEOUT = 15.0
 # the machine's firstmate reader (about 3 s) after FIRSTMATE_TIMEOUT.
 REMOTE_CONNECT = 4
 REMOTE_TIMEOUT = 12.0
+# The Projects page reads firstmate's two small files (projectmodel.py) every
+# PROJECTS_POLL seconds while the touch bar is connected, and every
+# PENDING_POLL while a change it asked for is not yet there; it gives up
+# showing a change as pending after PENDING_HOLD seconds.
+PROJECTS_POLL = 60.0
+PENDING_POLL = 15.0
+PENDING_HOLD = 900.0
+# The usage tile runs quota-axi (usage.py) at most once every USAGE_POLL
+# seconds, only while the touch bar is connected; a read gives up after
+# USAGE_TIMEOUT.
+USAGE_POLL = 60.0
+USAGE_POLL_RANGE = (60.0, 3600.0)
+USAGE_TIMEOUT = 60.0
+# A decisions board built within this many seconds is fresh: Bearings opens
+# it as it is, and asks firstmate to rebuild an older one.
+BOARD_FRESH = 600.0
 # Waiting for the touch bar's daemon when it is not running.
 RECONNECT = 5.0
 
