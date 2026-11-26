@@ -101,14 +101,15 @@ class RunCard:
         if view.pane:
             focus["icon"] = icon(FOCUS_ICON)
         else:
-            focus.update({"text": "no agent in Herdr has its copy", "touch": "none"})
+            reason = "runs on %s" % view.machine if view.remote() else "no agent in Herdr has its copy"
+            focus.update({"text": clip(reason, MAX_TEXT), "touch": "none"})
         out.append(focus)
         agent = {"id": AGENT, "col": 4, "row": 2, "label": clip(view.task or "no task", MAX_LABEL), "touch": "none"}
         agent["text"] = clip("pane %s" % view.pane if view.pane else "no agent", MAX_TEXT)
         out.append(agent)
         state, buttons = row
         if state is not None:
-            words = [view.phrase()]
+            words = [view.said()]
             if view.duplicate:
                 words.append("more than one active run for this agent, copy or branch")
             elif view.attention and view.run.active:
@@ -165,7 +166,8 @@ class RunCard:
 
     def lines(self, view, detail, project=False):
         run = view.run
-        head = [view.project.name] if project else []
+        head = [view.machine] if view.machine else []
+        head += [view.project.name] if project else []
         head += [run.branch, detail.status if detail is not None else run.status]
         if run.pr:
             head.append(run.pr)

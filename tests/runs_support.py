@@ -9,6 +9,7 @@ sees it. Nothing here talks to a real no-mistakes, repository or daemon.
 
 import json
 import os
+import subprocess
 import threading
 
 from agents_support import write_json, write_script
@@ -231,3 +232,37 @@ def read_nm_calls(directory):
             return [json.loads(line) for line in f]
     except FileNotFoundError:
         return []
+
+
+class FakeSsh:
+    """The stand-in for subprocess.run that ssh goes through (ssh.Ssh's
+    run seam): no connection is made; the shell line ssh would run on the
+    other machine runs here, with fake_no_mistakes' directory first on PATH
+    and the other machine's directories being directories of the test.
+    Every argv is recorded. down is the text ssh says when it cannot
+    connect (exit 255), timeout makes a call time out, and gate, an Event,
+    holds each call until it is set (a slow machine)."""
+
+    def __init__(self, bin_dir):
+        self.bin_dir, self.calls = bin_dir, []
+        self.down = self.gate = None
+        self.timeout = False
+        self.lock = threading.Lock()
+
+    def __call__(self, argv, **kwargs):
+        with self.lock:
+            self.calls.append(list(argv))
+        assert argv[0] == "ssh" and argv[-3] == "--", argv
+        if self.gate is not None:
+            self.gate.wait(10)
+        if self.timeout:
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        if self.down:
+            return subprocess.CompletedProcess(argv, 255, "", self.down + "\n")
+        env = dict(os.environ, PATH=self.bin_dir + os.pathsep + os.environ["PATH"])
+        return subprocess.run(["sh", "-c", argv[-1]], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+
+    def scripts(self):
+        """The shell lines run on the other machine."""
+        with self.lock:
+            return [c[-1] for c in self.calls]

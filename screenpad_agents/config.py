@@ -36,6 +36,19 @@ ConfigError naming it.
                                # optional, or a list: opens a live view of a
                                # run ({run} is the run id), for its card's
                                # Watch button
+  [[runs.remote]]              # optional, repeatable: another machine whose
+                               # runs the Runs page shows too, read over ssh
+  name = "desktop"             # its label on the page
+  ssh = "desktop"              # the ssh target (an alias in ~/.ssh/config)
+  home = "/path/to/firstmate"  # its firstmate home: its projects and tasks
+  code = "/path/to/firstmate"  # its checkout with the reader (default: home)
+  repos = ["/path/to/repo"]    # repo directories there to watch
+  command = "no-mistakes"      # no-mistakes there; or a list
+  terminal = ["ptyxis", "--new-window", "-x", "bash -c {command}"]
+                               # a terminal window here; {command} is the
+                               # watch to run in it (with watch_script)
+  watch_script = "/path/to/nm-watch.py"
+                               # the viewer, sent to run there with the run id
 """
 
 import os
@@ -57,6 +70,10 @@ from .common import (
     TASK_PLACEHOLDER,
     ConfigError,
 )
+
+MACHINE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,19}")
+SSH_TARGET = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.@:-]{0,127}")
+COMMAND_PLACEHOLDER = "{command}"
 
 SESSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 BEARINGS = os.path.join("bin", "fm-bearings-snapshot.sh")
@@ -103,11 +120,28 @@ class Runs:
     intervals, and the command that opens a live view of a run (watch,
     with its {run} word; None: no Watch button)."""
 
-    __slots__ = ("command", "firstmate", "idle", "poll", "repos", "watch")
+    __slots__ = ("command", "firstmate", "idle", "poll", "remotes", "repos", "watch")
 
     def __init__(self, repos=(), firstmate=False, command=("no-mistakes",), poll=RUNS_POLL, idle=RUNS_IDLE, watch=None):
         self.repos, self.firstmate, self.command = list(repos), firstmate, list(command)
         self.poll, self.idle, self.watch = poll, idle, list(watch) if watch else None
+        self.remotes: list = []
+
+
+class Remote:
+    """[[runs.remote]]: another machine, read over ssh: its label (name), the
+    ssh target, its firstmate home and checkout (None: no firstmate there),
+    its repo directories, its no-mistakes program, and how Watch opens a
+    run there: terminal (a laptop terminal's words, {command} the line to
+    run in it) and watch_script (the local viewer sent to run on that
+    machine); both set or neither."""
+
+    __slots__ = ("code", "command", "home", "name", "repos", "ssh", "terminal", "watch_script")
+
+    def __init__(self, name, ssh, home=None, code=None, repos=(), command=("no-mistakes",), terminal=None, script=None):
+        self.name, self.ssh, self.home, self.code = name, ssh, home, code or home
+        self.repos, self.command = list(repos), list(command)
+        self.terminal, self.watch_script = (list(terminal) if terminal else None), script
 
 
 def load(path):
@@ -166,7 +200,8 @@ def _review(path, value):
 
 
 def _runs(path, table, firstmate):
-    _known(path, table, {"repos", "firstmate", "command", "poll", "idle", "watch_command"}, "key in [runs]")
+    keys = {"repos", "firstmate", "command", "poll", "idle", "watch_command", "remote"}
+    _known(path, table, keys, "key in [runs]")
     repos = table.get("repos", [])
     if not isinstance(repos, list) or not all(isinstance(r, str) and os.path.isabs(r) for r in repos):
         raise ConfigError("%s: [runs] repos must be a list of absolute paths" % path)
@@ -177,7 +212,8 @@ def _runs(path, table, firstmate):
     if not isinstance(discover, bool):
         raise ConfigError("%s: [runs] firstmate must be true or false" % path)
     discover = discover and firstmate
-    if not repos and not discover:
+    remotes = _remotes(path, table.get("remote", []))
+    if not repos and not discover and not remotes:
         raise ConfigError("%s: [runs] has no repos, and no [firstmate] to find projects in" % path)
     command = _command(path, table.get("command", "no-mistakes"), "[runs] command", "no-mistakes")
     poll = _seconds(path, table, "runs", RUNS_POLL, RUNS_POLL_RANGE)
@@ -189,7 +225,56 @@ def _runs(path, table, firstmate):
         watch = _command(path, table["watch_command"], "[runs] watch_command", "/path/to/watch")
         if not any(RUN_PLACEHOLDER in word for word in watch):
             raise ConfigError("%s: [runs] watch_command must hold {run}, where the run id goes" % path)
-    return Runs(list(dict.fromkeys(os.path.normpath(r) for r in repos)), discover, command, poll, idle, watch)
+    runs = Runs(list(dict.fromkeys(os.path.normpath(r) for r in repos)), discover, command, poll, idle, watch)
+    runs.remotes = remotes
+    return runs
+
+
+def _remotes(path, value):
+    """The [[runs.remote]] tables as Remotes."""
+    if not isinstance(value, list) or not all(isinstance(t, dict) for t in value):
+        raise ConfigError("%s: [[runs.remote]] must be an array of tables" % path)
+    out: list[Remote] = []
+    for table in value:
+        keys = {"name", "ssh", "home", "code", "repos", "command", "terminal", "watch_script"}
+        _known(path, table, keys, "key in [[runs.remote]]")
+        name, target = table.get("name"), table.get("ssh")
+        if not isinstance(name, str) or not MACHINE.fullmatch(name):
+            raise ConfigError('%s: [[runs.remote]] name must be a short name, like "desktop"' % path)
+        if name in {r.name for r in out}:
+            raise ConfigError("%s: two [[runs.remote]] are named %s" % (path, name))
+        if not isinstance(target, str) or not SSH_TARGET.fullmatch(target):
+            raise ConfigError('%s: [[runs.remote]] %s: ssh must be an ssh target, like "desktop"' % (path, name))
+        home, code = (_remote_path(path, name, table, k) for k in ("home", "code"))
+        repos = table.get("repos", [])
+        if not isinstance(repos, list) or not all(isinstance(r, str) and os.path.isabs(r) for r in repos):
+            raise ConfigError("%s: [[runs.remote]] %s: repos must be a list of absolute paths" % (path, name))
+        if code and not home:
+            raise ConfigError("%s: [[runs.remote]] %s: code needs home" % (path, name))
+        if not repos and not home:
+            raise ConfigError("%s: [[runs.remote]] %s has no repos and no home to find projects in" % (path, name))
+        command = _command(path, table.get("command", "no-mistakes"), "[[runs.remote]] command", "no-mistakes")
+        terminal = script = None
+        if ("terminal" in table) != ("watch_script" in table):
+            raise ConfigError("%s: [[runs.remote]] %s: terminal and watch_script go together" % (path, name))
+        if "terminal" in table:
+            terminal = _command(path, table["terminal"], "[[runs.remote]] terminal", "ptyxis")
+            if not any(COMMAND_PLACEHOLDER in word for word in terminal):
+                raise ConfigError("%s: [[runs.remote]] %s: terminal must hold {command}" % (path, name))
+            script = table["watch_script"]
+            if not isinstance(script, str) or not os.path.isabs(script) or not os.path.isfile(script):
+                raise ConfigError(
+                    "%s: [[runs.remote]] %s: watch_script must be a file, by absolute path" % (path, name)
+                )
+        out.append(Remote(name, target, home, code, [os.path.normpath(r) for r in repos], command, terminal, script))
+    return out
+
+
+def _remote_path(path, name, table, key):
+    value = table.get(key)
+    if value is not None and (not isinstance(value, str) or not os.path.isabs(value)):
+        raise ConfigError("%s: [[runs.remote]] %s: %s must be an absolute path" % (path, name, key))
+    return os.path.normpath(value) if value else None
 
 
 def _known(path, table, allowed, what):

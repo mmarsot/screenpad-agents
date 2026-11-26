@@ -27,6 +27,11 @@ With [runs] watch_command, Watch on a run's card starts that command with the
 run's id (a Watch window of the run's steps), detached like the review
 command (desktop.launch): never waited for beyond its grace, its input and
 output to /dev/null, and it reads nothing of no-mistakes itself from here.
+
+With [[runs.remote]] machines (remotewatch.py), each read in a thread of its
+own, this thread also forwards the card's run to the machine it is on (and
+starts Watch there through that machine's terminal command), and merges
+what they post ("remote") into the page.
 """
 
 import os
@@ -36,8 +41,9 @@ import time
 from . import desktop
 from . import runs as model
 from .common import RUN_PLACEHOLDER, why
-from .nomistakes import RUN_ID, NoMistakesError, NotARepo
+from .nomistakes import RUN_ID, NoMistakesError
 from .runcard import BACK, FOCUS, PR, WATCH
+from .runscan import read
 
 # A card's findings: the steps' rounds read at most.
 MAX_STEPS_READ = 4
@@ -54,10 +60,14 @@ def start_watch(argv):
 
 
 class RunsWatch:
-    def __init__(self, settings, client, home, post, clock=time.monotonic, opener=open_pr, launcher=start_watch):
+    def __init__(
+        self, settings, client, home, post, clock=time.monotonic, opener=open_pr, launcher=start_watch, remotes=None
+    ):
         self.settings, self.client, self.home, self.post, self.clock = settings, client, home, post, clock
         self.opener, self.launcher = opener, launcher
-        self.board = model.Runs(watch=bool(settings.watch))
+        self.remotes = dict(remotes or {})  # the remote machines' threads, by name (remotewatch.py)
+        can = {n for n, r in self.remotes.items() if r.can_watch}
+        self.board = model.Runs(bool(settings.watch), list(self.remotes), can)
         self._jobs: queue.Queue = queue.Queue()
         self._places = None
         self._showing = False
@@ -128,50 +138,10 @@ class RunsWatch:
             self.post("launched", run_id, None)
 
     def scan(self, worktrees=(), cwds=()):
-        """One read of every project and copy: a runs.Scan;
-        NoMistakesError when no project could be read at all."""
-        configured = list(self.settings.repos)
-        worktrees = list(worktrees) if self.settings.firstmate else []
-        dirs = configured + self._clones() + worktrees
-        projects: dict = {}
-        seen, errors = set(), []
-        for d in dirs:
-            real = os.path.realpath(d)
-            if real in seen:
-                continue
-            seen.add(real)
-            try:
-                repo, listed = self.client.listing(d)
-            except NoMistakesError as e:
-                if not isinstance(e, NotARepo):
-                    errors.append(str(e))
-                if d in configured:
-                    projects.setdefault(real, model.Project(real, error=str(e)))
-                continue
-            projects.setdefault(repo, model.Project(repo, listed))
-        if errors and not any(p.error is None for p in projects.values()):
-            raise NoMistakesError(errors[0])
-        copies, looked = [], set()
-        for d in configured + worktrees + list(cwds):
-            real = os.path.realpath(d)
-            if real in looked:
-                continue
-            looked.add(real)
-            try:
-                branch, run_id = self.client.current(d)
-            except NoMistakesError:
-                continue
-            if run_id is not None:
-                copies.append(model.Copy(real, branch, run_id))
-        details = {}
-        for p in projects.values():
-            for r in p.runs:
-                if r.active:
-                    try:
-                        details[r.id] = self.client.detail(r.id)
-                    except NoMistakesError:
-                        pass
-        return model.Scan(projects.values(), copies, details)
+        """One read of every project and copy of this machine: a
+        runs.Scan; NoMistakesError when no project could be read at all."""
+        worktrees = worktrees if self.settings.firstmate else ()
+        return read(self.client, self.settings.repos, self._clones(), worktrees, cwds)
 
     def _clones(self):
         """firstmate's registered clones: the directories in <home>/projects."""
@@ -206,6 +176,16 @@ class RunsWatch:
         if connected != self._showing:
             self._showing = connected
             self._jobs.put(("showing", connected))
+            for remote in self.remotes.values():
+                remote.showing(connected)
+
+    def _watch_card(self, run_id):
+        """Tell the thread of the machine run_id is on to read it (and every
+        other thread to read no card); None: none."""
+        machine = self.board.machine_of(run_id) if run_id else None
+        self._jobs.put(("watch", run_id if run_id and machine is None else None))
+        for name, remote in self.remotes.items():
+            remote.watch(run_id if run_id and machine == name else None)
 
     def result(self, what, *rest):
         """Take one of the thread's results in; True: the page changed."""
@@ -213,7 +193,12 @@ class RunsWatch:
             had = self.board.card
             self.board.set_scan(*rest)
             if had is not None and self.board.card is None:
-                self._jobs.put(("watch", None))
+                self._watch_card(None)
+        elif what == "remote":
+            had = self.board.card
+            self.board.set_remote(*rest)
+            if had is not None and self.board.card is None:
+                self._watch_card(None)
         elif what == "opened":
             self.board.set_opened(*rest)
         elif what == "launched":
@@ -232,7 +217,7 @@ class RunsWatch:
         if board.card is not None:
             if widget == BACK:
                 board.close_card()
-                self._jobs.put(("watch", None))
+                self._watch_card(None)
                 return True, None
             if widget == PR:
                 return self._open_pr(fleet), None
@@ -241,7 +226,7 @@ class RunsWatch:
             return False, board.card_pane(fleet) if widget == FOCUS else None
         run_id = board.run_of(widget)
         if run_id is not None and board.open_card(run_id) is not None:
-            self._jobs.put(("watch", run_id))
+            self._watch_card(run_id)
             return True, None
         return False, None
 
@@ -249,10 +234,21 @@ class RunsWatch:
         """Start the watch command for the open card's run, unless it is
         being started: True when the card changed. The id goes into the
         command only when it is a run id as no-mistakes prints it."""
-        card, command = self.board.card, self.settings.watch
-        if card is None or not command or not RUN_ID.fullmatch(card.run_id) or not card.start_watch():
+        card = self.board.card
+        if card is None or not RUN_ID.fullmatch(card.run_id):
             return False
-        self._jobs.put(("launch", card.run_id, [w.replace(RUN_PLACEHOLDER, card.run_id) for w in command]))
+        remote = self.remotes.get(self.board.machine_of(card.run_id) or "")
+        command = remote.can_watch if remote is not None else self.settings.watch
+        if not command or not card.start_watch():
+            return False
+        try:
+            argv = remote.watch_argv(card.run_id) if remote is not None else None
+        except desktop.DesktopError as e:
+            card.watch_ended(str(e))
+            return True
+        if remote is None:
+            argv = [w.replace(RUN_PLACEHOLDER, card.run_id) for w in self.settings.watch]
+        self._jobs.put(("launch", card.run_id, argv))
         return True
 
     def _open_pr(self, fleet):
@@ -269,3 +265,5 @@ class RunsWatch:
 
     def stop(self):
         self._jobs.put(None)
+        for remote in self.remotes.values():
+            remote.stop()
