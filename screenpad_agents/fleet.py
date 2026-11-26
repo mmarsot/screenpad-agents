@@ -29,10 +29,31 @@ from screenpad_app.common import MAX_BADGE, MAX_LABEL, MAX_ROWS, MAX_TEXT, MAX_T
 
 from . import callpage
 from . import card as cards
-from .common import CALLS_TILE, CAPTAIN, COLUMNS, FLEET_TILE, HELM, MIN_ROWS, PAGE, STATE_TONES, icon
+from .common import (
+    BEARINGS_TILE,
+    CALLS_TILE,
+    CAPTAIN,
+    COLUMNS,
+    COMPASS_ICON,
+    FLEET_TILE,
+    HELM,
+    MIN_ROWS,
+    PAGE,
+    STATE_TONES,
+    icon,
+)
 from .keymap import interrupt_keys
 
 CALLS_WIDGET = "calls"
+# What the Bearings tile says while it is not a compass alone: the board's
+# state (callpage.BUTTONS) -> its words and tone, with the detail (an error,
+# firstmate's reply) after them.
+BEARINGS_WORDS = {
+    "opening": ("asking firstmate…", "neutral"),
+    "late": ("no fresh board: tap to retry", "warning"),
+    "failed": ("failed", "reject"),
+    "unopened": ("not opened", "reject"),
+}
 
 
 def widget_id(pane):
@@ -61,7 +82,7 @@ class Fleet:
         self._panes = {}
 
     def tiles(self):
-        return [FLEET_TILE, CALLS_TILE] if self.firstmate else [FLEET_TILE]
+        return [FLEET_TILE, CALLS_TILE, BEARINGS_TILE] if self.firstmate else [FLEET_TILE]
 
     def set_agents(self, agents, error=None):
         self.agents, self.herdr_error = (None, error) if error else (list(agents), None)
@@ -155,7 +176,7 @@ class Fleet:
         if not self.firstmate:
             return [self.page(), self.fleet_tile()]
         calls = callpage.page(self.bearings, self.firstmate_error, self.board, self.reviews)
-        return [self.page(), calls, self.fleet_tile(), self.calls_tile()]
+        return [self.page(), calls, self.fleet_tile(), self.calls_tile(), self.bearings_tile()]
 
     def summary(self):
         if self.herdr_error:
@@ -219,6 +240,18 @@ class Fleet:
         if badge:
             msg["badge"] = badge
         return msg
+
+    def bearings_tile(self):
+        """The Bearings tile: a compass, and the words of the board's state
+        while firstmate is asked or something failed (on the bar a tile with
+        an icon shows only it)."""
+        msg = {"op": "set", "tile": BEARINGS_TILE, "label": "Bearings"}
+        words = BEARINGS_WORDS.get(self.board.state)
+        if words is None:
+            msg["icon"] = icon(COMPASS_ICON)
+            return msg
+        text = words[0] + (": " + self.board.detail if self.board.detail and self.board.state != "opening" else "")
+        return dict(msg, text=clip(text, MAX_TILE_TEXT), tone=words[1])
 
     def _calls(self):
         """The Captain's Call count as a badge, a line of text and a tone."""

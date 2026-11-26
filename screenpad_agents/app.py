@@ -16,21 +16,22 @@ a queue (and a pipe that wakes its select):
   when its card's Request is chosen, and checks for it while the app waits
   for it (boardrequest.py);
 - the Runs page's, with [runs]: reads no-mistakes, and opens a run's pull
-  request in the browser (runwatch.py).
+  request in the browser (runwatch.py);
+- the Projects page's and the usage tile's (extras.py): firstmate's settings
+  files and the requests for a change, and quota-axi.
 
 The loop keeps the connection to the touch bar through the client library's
 Link (retrying every RECONNECT seconds while the daemon is not running or
-refuses the app's protocol version), sends the page and tiles when what
-they show changed (all of them again after a reconnect), and turns touches into work for the threads: a tap on an
-agent's widget opens its card (fleet.py, card.py), whose buttons focus,
-interrupt and answer; a tap on the agents tile focuses the first blocked
-agent; a tap on the Captain's Call widget opens its view in place of the
-grid (callpage.py), the same as the app's "calls" page: the calls waiting,
-and the decisions board's button, which opens the board in the browser on
-the main screen or asks firstmate to build it, saying when it is open or
-that it did not come (boardrequest.py); a tap on the calls tile opens the
-board straight away. Each reads firstmate again (the panel answers no
-Captain's Call).
+refuses the app's protocol version), sends the page and tiles when what they
+show changed (all of them again after a reconnect), and turns touches into
+work for the threads: a tap on an agent's widget opens its card (fleet.py,
+card.py), whose buttons focus, interrupt and answer; a tap on the agents tile
+focuses the first blocked agent; one on the Captain's Call widget opens its
+view in place of the grid (callpage.py), the same as the app's "calls" page:
+the calls waiting, and the decisions board's button (boardrequest.py); one on
+the calls tile opens the board straight away, one on the bearings tile asks
+firstmate to rebuild it unless it is fresh and opens it as soon as it is. Each
+reads firstmate again (the panel answers no Captain's Call).
 """
 
 import os
@@ -48,23 +49,25 @@ from . import card as cards
 from .boardrequest import BoardRequest
 from .common import (
     APP,
+    BEARINGS_TILE,
     CALLS_PAGE,
     CALLS_TILE,
     FLEET_TILE,
     PAGE,
+    PROJECTS_PAGE,
     RECONNECT,
     RUNS_PAGE,
     RUNS_TILE,
 )
 from .common import why as _why
+from .extras import Extras
 from .firstmate import FirstmateError
 from .fleet import CALLS_WIDGET, Fleet
-from .herdr import HerdrError
+from .herdrwork import HerdrWorker
 from .remotewatch import build
 from .reviewrequest import Reviews
 from .runs import down_notice
 from .runwatch import RunsWatch
-from .screen import guarded_send, read_screen
 
 
 class App:
@@ -80,6 +83,8 @@ class App:
         opener=None,
         launcher=None,
         ssh_run=None,
+        usage_run=None,
+        usage_launcher=None,
     ):
         self.config, self.herdr, self.firstmate = config, herdr, firstmate
         self.socket_path, self.clock = socket_path, clock
@@ -91,15 +96,17 @@ class App:
             opens.update({"launcher": launcher} if launcher is not None else {})
             remotes = build(config.runs, self._post, clock, ssh_run or subprocess.run)
             self.runs = RunsWatch(config.runs, nomistakes, config.home, self._post, clock, remotes=remotes, **opens)
+        self.extras = Extras(config, firstmate, self._post, self.log, self._tell, clock, usage_run, usage_launcher)
         self.stopping = threading.Event()
         self._results: queue.Queue = queue.Queue()
         self._jobs: queue.Queue = queue.Queue()
+        self.herdr_worker = HerdrWorker(herdr, self._jobs, self._post, self.stopping, clock, config.herdr_poll)
         self._control: queue.Queue = queue.Queue()
         self._read_firstmate = threading.Event()
         self._wake_r, self._wake_w = os.pipe()
         os.set_blocking(self._wake_r, False)
         os.set_blocking(self._wake_w, False)
-        tiles = self.fleet.tiles() + ([RUNS_TILE] if self.runs else [])
+        tiles = self.fleet.tiles() + ([RUNS_TILE] if self.runs else []) + self.extras.tiles()
         self.link = Link(socket_path, APP, tiles, retry=RECONNECT, log=self.log, clock=clock)
         self._threads = []
         self._told = set()
@@ -112,12 +119,13 @@ class App:
     # --- the worker threads ------------------------------------------------
 
     def start(self):
-        workers = [("herdr", self._herdr_worker)]
+        workers = [("herdr", self.herdr_worker.run)]
         if self.firstmate is not None:
             workers += [("firstmate", self._firstmate_worker), ("control", self._control_worker)]
         if self.runs is not None:
             workers.append(("runs", self.runs.worker))
             workers += [("runs-" + name, remote.worker) for name, remote in self.runs.remotes.items()]
+        workers += self.extras.workers()
         self._threads = [threading.Thread(target=run, name=name, daemon=True) for name, run in workers]
         for t in self._threads:
             t.start()
@@ -131,55 +139,6 @@ class App:
             os.write(self._wake_w, b"x")
         except OSError:
             pass
-
-    def _herdr_worker(self):
-        due, watching = 0.0, None
-        while not self.stopping.is_set():
-            try:
-                job = self._jobs.get(timeout=max(0.0, due - self.clock()))
-            except queue.Empty:
-                job = None
-            if self.stopping.is_set():
-                return
-            if job is not None and job[0] == "watch":
-                watching = job[1]
-            elif job is not None:
-                try:
-                    self._herdr_job(*job)
-                except Exception as e:
-                    self._post("log", _why(e, HerdrError))
-            try:
-                self._post("agents", self.herdr.agents(), None)
-            except Exception as e:
-                self._post("agents", None, _why(e, HerdrError))
-            if watching is not None:
-                try:
-                    self._post("screen", read_screen(self.herdr, watching))
-                except Exception as e:
-                    self._post("log", _why(e, HerdrError))
-            due = self.clock() + self.config.herdr_poll
-
-    def _herdr_job(self, what, *args):
-        if what == "focus":
-            self.herdr.focus(args[0])
-        elif what == "answer":
-            drawn, answer, keys = args
-            try:
-                why, fresh = guarded_send(self.herdr, drawn, keys)
-            except Exception as e:
-                why, fresh = "sending failed: %s" % _why(e, HerdrError), None
-            self._post("answered", drawn.pane, answer, why, fresh)
-        elif what == "keys":
-            pane, kind, keys = args
-            try:
-                agent = self.herdr.agent(pane)
-                if agent.kind != kind:
-                    raise HerdrError("another agent is in pane %s now" % pane)
-                self.herdr.send_keys(pane, keys)
-            except Exception as e:
-                self._post("interrupted", pane, None, _why(e, HerdrError))
-            else:
-                self._post("interrupted", pane, "sent %s" % " ".join(keys), None)
 
     def _firstmate_worker(self):
         while not self.stopping.is_set():
@@ -235,10 +194,11 @@ class App:
                 self.handle(msg)
         if self.runs is not None:
             self.runs.showing(self.link.connected)
+        self.extras.showing(self.link.connected)
         if (changed or self._dirty) and self.link.connected:
             self._dirty = False
             runs = self.runs.board.messages(self.fleet) if self.runs is not None else []
-            self.link.show(self.fleet.messages() + runs)
+            self.link.show(self.fleet.messages() + runs + self.extras.messages())
 
     def _drain(self):
         try:
@@ -305,7 +265,16 @@ class App:
         elif what == "log":
             self.log(rest[0])
             return False
+        else:
+            changed = self.extras.result(what, *rest)
+            return True if changed is None else changed
         return True
+
+    def bearings(self):
+        """A tap on the bearings tile: open the decisions board if it is
+        fresh, else ask firstmate to rebuild it and open it once it is."""
+        if self.firstmate is not None and self.board.rebuild():
+            self._dirty = True
 
     def request_board(self):
         """Request board chosen: ask firstmate for the board."""
@@ -342,7 +311,9 @@ class App:
         op = msg.get("op")
         if op == "welcome":
             for tile in msg.get("unplaced") or []:
-                if tile == CALLS_TILE:  # page = "calls" is what the bar needs for Captain's Call
+                # Optional ones: page = "calls" is what the bar needs for
+                # Captain's Call, and the agents and bearings tiles may stay off it.
+                if tile in (CALLS_TILE, FLEET_TILE, BEARINGS_TILE):
                     continue
                 self.log('tile "%s" has no spot; give it one with tile = "%s" in touchbar.toml' % (tile, tile))
             for tile in msg.get("taken") or []:
@@ -351,6 +322,9 @@ class App:
             self.log("the touch bar refused %s: %s" % (msg.get("request"), msg.get("message")))
         elif op == "event" and msg.get("page") == CALLS_PAGE and self.firstmate is not None:
             if msg.get("type") == "tap" and self._call_tap(msg.get("widget")):
+                self._dirty = True
+        elif op == "event" and msg.get("page") == PROJECTS_PAGE:
+            if msg.get("type") == "tap" and self.extras.touch(PROJECTS_PAGE, msg.get("widget")):
                 self._dirty = True
         elif op == "event" and msg.get("page") == PAGE and msg.get("type") in ("tap", "long"):
             self._touch(msg.get("widget"), msg["type"])
@@ -366,8 +340,12 @@ class App:
                 self._focus_pane(self.fleet.first_blocked())
             elif msg.get("tile") == CALLS_TILE:
                 self.captains_call()
+            elif msg.get("tile") == BEARINGS_TILE:
+                self.bearings()
             elif msg.get("tile") == RUNS_TILE and self.runs is not None:
                 self._focus_pane(self.runs.board.first_attention_pane(self.fleet))
+            else:
+                self.extras.tap_tile(msg.get("tile"))
 
     def _touch(self, widget, touch):
         card = self.fleet.shown_card()
@@ -480,6 +458,7 @@ class App:
         self._control.put(None)
         if self.runs is not None:
             self.runs.stop()
+        self.extras.stop()
         self.link.close()
         for t in self._threads:
             t.join(timeout=2.0)

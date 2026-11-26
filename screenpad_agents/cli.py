@@ -13,8 +13,12 @@ from .firstmate import Firstmate, FirstmateError
 from .fleet import Fleet
 from .herdr import Herdr, HerdrError
 from .nomistakes import NoMistakes, NoMistakesError, Unreachable
+from .projectmodel import read as read_projects
+from .projectpage import Projects, summary
 from .remotewatch import build
 from .runwatch import RunsWatch
+from .usage import Usage, UsageError
+from .usagewatch import UsageWatch
 
 
 def clients(config):
@@ -75,8 +79,10 @@ def cmd_show(args, ssh_run=subprocess.run):
                 watch.board.set_remote(name, remote.scan())
             except NoMistakesError as e:
                 watch.board.set_remote(name, None, str(e), isinstance(e, Unreachable))
+    projects, usage = show_projects(config), show_usage(config)
     if args.json:
-        print(json.dumps(fleet.messages() + (watch.board.messages(fleet) if watch else []), indent=2))
+        extras = (projects.messages() if projects else []) + ([usage.tile()] if usage else [])
+        print(json.dumps(fleet.messages() + (watch.board.messages(fleet) if watch else []) + extras, indent=2))
         return 0
     print("Herdr session %s: %s" % (config.session, fleet.summary()))
     if fleet.herdr_error:
@@ -91,7 +97,36 @@ def cmd_show(args, ssh_run=subprocess.run):
             print("  " + fleet.firstmate_error)
     if watch is not None:
         show_runs(watch.board, fleet)
+    if projects is not None:
+        print(
+            "Projects: %s"
+            % (projects.read.error or ", ".join("%s (%s)" % (p.name, summary(p)) for p in projects.read.projects))
+        )
+    if usage is not None:
+        tile = usage.tile()
+        print("Usage: %s | %s" % (tile["label"], tile["text"]))
     return 1 if fleet.herdr_error else 0
+
+
+def show_projects(config):
+    """The Projects page as the files read now, None without firstmate."""
+    if not config.home:
+        return None
+    page = Projects()
+    page.set_read(read_projects(config.home))
+    return page
+
+
+def show_usage(config):
+    """The usage tile as quota-axi reads now, None without [usage]."""
+    if config.usage is None:
+        return None
+    tile = Usage()
+    try:
+        tile.set(UsageWatch(config.usage, None).read())
+    except UsageError as e:
+        tile.set(None, str(e))
+    return tile
 
 
 def show_runs(board, fleet):

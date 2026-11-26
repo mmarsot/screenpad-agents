@@ -20,50 +20,25 @@ URL on the forge) is a change ready for review as well as a decision keyed
 code-review is, and the two of one task are one change (_join_pull_requests):
 the review buttons of Captain's Call and of a run's card (reviewcall.py).
 
-Interrupting a task's agent goes through firstmate's control plane, which
-knows the task's harness and checks what it did:
-
-  FM_HOME=<home> <code>/bin/fm-control.sh <task id> interrupt
-
-It and the board's request below are the only firstmate commands that act;
-fm-inbox.sh receipts, below, only reads.
-
-Tapping Captain's Call opens firstmate's decisions board, the Lavish board
-of /bearings lavish, in the browser on the main screen, where the decisions
-are answered; the panel answers none. Its file is what firstmate says,
-
-  FM_HOME=<home> <code>/bin/fm-bearings-board.sh path
-
-and it is open when Lavish's own session listing (lavish-axi, run with no
-argument) shows that file "open", with its session's URL. That URL, and only
-a loopback http one, is handed to the desktop's URL handler in a transient
-scope of its own (desktop.py),
-
-  systemd-run --user --scope --collect --quiet -- gio open <url>
-
-so a browser it starts is never in the app's unit. Without systemd-run
-nothing is opened. With no session open
-nothing is built or armed from here: firstmate composes the board. The panel
-can ask it to, with one note in firstmate's inbox,
-
-  FM_HOME=<home> <code>/bin/fm-inbox.sh note --json --request-id <id> -- <BOARD_REQUEST>
-
-which wakes firstmate once; it then builds the board, and Lavish opens it.
-The app keeps one request id per request, so a retry after a failure (the
-note perhaps saved, firstmate not woken) replays that note rather than
-queueing a second one. While it waits for the board, it reads whether
-firstmate has handled that note or replied to it, with fm-inbox.sh's own
-read-only view of its notes (it writes nothing and wakes no one),
-
-  FM_HOME=<home> <code>/bin/fm-inbox.sh receipts
-
-and checks for the board open as a tap does (boardrequest.py).
+Interrupting a task's agent goes through firstmate's control plane
+(fm-control.sh <task id> interrupt). The decisions board's file is what
+`fm-bearings-board.sh path` says; the board is open when Lavish's session
+listing (lavish-axi) shows that file "open", and only its loopback http URL
+goes to the desktop's URL handler in a transient scope of its own
+(desktop.py). The app never builds or arms a board: it asks firstmate with
+one note in its inbox (fm-inbox.sh note --json --request-id <id>), which
+wakes it once, and reads, read-only, whether it handled or answered it
+(fm-inbox.sh receipts); boardrequest.py has the wait. The notes that
+Captain's Call, the review verdicts, Bearings and the Projects page send are
+the only things written into firstmate (note()). docs/agents.md has the
+rest.
 """
 
 import json
 import os
 import re
 import subprocess
+import time
 
 from .common import (
     BEARINGS_SCHEMA,
@@ -86,11 +61,12 @@ SESSION_ROW = re.compile(r'(?P<status>[^,]*),"(?P<url>[^"]*)"')
 # The board's URL as Lavish serves it: on this machine only.
 BOARD_URL = re.compile(r"http://(127\.0\.0\.1|localhost|\[::1\]):[0-9]{1,5}/[A-Za-z0-9._~/%-]*")
 # The note that asks firstmate for its decisions board, what it asks first
-# (firstmate's wake shows the note's start).
+# (firstmate's wake shows the note's start); and the one Bearings sends.
 BOARD_REQUEST = (
     "Please open the decisions board: /bearings lavish. "
     "Asked from Captain's Call on the ScreenPad, where no decisions board is open."
 )
+REBUILD_REQUEST = "ScreenPad: rebuild the bearings board"
 
 # A decision with this key is a change ready for review (a task's status
 # line "needs-decision [key=code-review]: ready for review at <head> ..."):
@@ -252,14 +228,27 @@ class Firstmate:
     def board_url(self):
         """The URL of firstmate's decisions board when Lavish has it open,
         None when it has not; FirstmateError when either cannot say."""
+        path = self._board_path()
+        listing = self._call(self.lavish, "lavish-axi", LAVISH_TIMEOUT, home=False)
+        return listed_url(listing.stdout or "", os.path.realpath(path))
+
+    def board_age(self):
+        """Seconds since firstmate last built the board (its file's
+        modification time, never its contents); FirstmateError when it
+        cannot say."""
+        try:
+            return max(0.0, time.time() - os.stat(self._board_path()).st_mtime)
+        except OSError as e:
+            raise FirstmateError("the decisions board's file: %s" % e.strerror)
+
+    def _board_path(self):
         if not self.board or not os.access(self.board, os.X_OK):
             raise FirstmateError("firstmate has no bin/fm-bearings-board.sh")
         done = self._call([self.board, "path"], "fm-bearings-board.sh path", BOARD_TIMEOUT)
         lines = (done.stdout or "").strip().splitlines()
         if len(lines) != 1 or not os.path.isabs(lines[0]):
             raise FirstmateError("fm-bearings-board.sh path printed no board path")
-        listing = self._call(self.lavish, "lavish-axi", LAVISH_TIMEOUT, home=False)
-        return listed_url(listing.stdout or "", os.path.realpath(lines[0]))
+        return lines[0]
 
     def open_board(self):
         """Open the decisions board in the browser, the opener in a scope of
@@ -275,15 +264,11 @@ class Firstmate:
             raise FirstmateError(str(e))
         return url
 
-    def request_board(self, request_id):
-        """Ask firstmate to build and open its decisions board, with one note
-        in its inbox (one wake) under request_id: what fm-inbox.sh reported,
-        (outcome, note id), the outcome "created", or "replay" for a
-        request_id it already has; None when that note is one firstmate has
-        already handled, acknowledged or moved to handled/ (its replay wakes
-        nothing: ask again under a new id); FirstmateError when it refused or
-        failed."""
-        return self._note(request_id, BOARD_REQUEST)
+    def request_board(self, request_id, text=BOARD_REQUEST):
+        """Ask firstmate to build and open its decisions board (text: what
+        the note says; Bearings asks it to rebuild it), with one note in its
+        inbox under request_id; what note() returns."""
+        return self.note(request_id, text)
 
     def review_note(self, request_id, verdict, review):
         """Tell firstmate what the captain decided about a change ready for
@@ -305,7 +290,7 @@ class Firstmate:
             text = CHANGES_NOTE % review.task
         else:
             raise FirstmateError("not a review decision: %r" % (verdict,))
-        return self._note(request_id, text)
+        return self.note(request_id, text)
 
     def open_review(self, task_id):
         """Open task_id's change in the configured review command (its
@@ -322,7 +307,14 @@ class Firstmate:
         except DesktopError as e:
             raise FirstmateError(str(e))
 
-    def _note(self, request_id, text):
+    def note(self, request_id, text):
+        """Put one note in firstmate's inbox (one wake) under request_id:
+        what fm-inbox.sh reported, (outcome, note id), the outcome "created",
+        or "replay" for a request_id it already has; None when that note is
+        one firstmate has already handled, acknowledged or moved to handled/
+        (its replay wakes nothing: ask again under a new id);
+        FirstmateError when it refused or failed. The captain's capture
+        surface, for the board, the review verdicts and the Projects page."""
         argv = [self._inbox(), "note", "--json", "--request-id", request_id, "--", text]
         done = self._call(argv, "fm-inbox.sh note", INBOX_TIMEOUT)
         try:

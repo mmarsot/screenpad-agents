@@ -58,7 +58,7 @@ class RunsLoopTests(unittest.TestCase):
 
     def test_the_page_and_tile_joined_to_the_agent_and_its_task(self):
         rig = self.rig()
-        self.assertEqual(rig.handled[0]["tiles"], ["agents", "calls", "runs"])
+        self.assertEqual(rig.handled[0]["tiles"], ["agents", "calls", "bearings", "runs"])
         tile = rig.apps.provided()["runs"]
         self.assertEqual((tile["text"], tile["badge"], tile["tone"]), ("1 active · 1 needs you", "1", "warning"))
         self.assertIn(("current", COPY), self.nm.calls)  # the task's worktree and the agent's cwd

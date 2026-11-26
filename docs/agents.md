@@ -6,7 +6,10 @@
 - **which firstmate task each agent is**, when you use firstmate: an agent whose pane is a task's recorded endpoint is named after the task, with what the task is doing. Agents outside firstmate still show, named after their directory.
 - **how many Captain's Calls are waiting** in firstmate, decisions and contributions that need you, and **which ones**, on [Captain's Call's page](#captains-call-and-the-decisions-board), with a button that opens firstmate's decisions board in your browser on the main screen, where you answer them, or asks firstmate to build it.
 - **an agent's card**, when you tap it: the agent's own screen, Focus and Interrupt, and when it waits on a Claude Code permission dialog, the answers: Allow once, Always and Deny.
-- two **tiles for the bar**, if you give them spots: `agents` (a ship's helm, with how many agents are blocked) and `calls` (the captain's cap, with the Captain's Call count); and a third page, **Captain's Call** (`calls`), which a `page` item on the bar opens.
+- a **[Projects](projects.md) page** (`projects`) with firstmate: each project's settings, switchable from the touch bar (the phase presets Iterate and Refine, validation, auto-merge, annotated review, where it runs, the worker's model and effort); a tap asks firstmate for the change, and the page shows it pending until firstmate's files say so.
+- a **Bearings tile** (`bearings`, a compass) with firstmate: one tap opens the live decisions board, asking firstmate to rebuild it first when it is not open and fresh ([Bearings](#bearings)).
+- optionally, with `[usage]`, a **[usage tile](usage.md)** (`usage`): each provider's quota left and when it resets, from `quota-axi`.
+- **tiles for the bar**, if you give them spots: `agents` (a ship's helm, with how many agents are blocked), `calls` (the captain's cap, with the Captain's Call count), `bearings` and `usage`; and pages the apps page lists, **Captain's Call** (`calls`), which a `page` item on the bar opens, and **Projects** (`projects`).
 - optionally, with `[runs]` in its config, a second page, **[Runs](runs.md)**: your projects' no-mistakes runs and their status, each joined to its agent and task, with a warning when one agent has more than one active run, and a `runs` tile.
 
 ![The Agents page: Captain's Call with the captain's cap and 2 waiting, then fix-login-redirect blocked in amber, web-dark-mode and docs-install-guide working in green, and dotfiles idle in grey; the bar above shows the agents tile (the helm, badge 1) and Captain's Call's page item (the cap, badge 2)](images/agents-page.png)
@@ -24,6 +27,8 @@ The app draws itself with its own icons, SVGs in `icons/` that `install.sh` inst
 | a lighthouse (`lighthouse.svg`) | the [Runs](runs.md) page and the `runs` tile |
 | a back arrow (`back.svg`), a spyglass (`spyglass.svg`), an anchor (`anchor.svg`) | Back, Focus and Interrupt on [an agent's card](#an-agents-card) (Back and Focus on a run's card, Back on Captain's Call's view) |
 | a signal flag (`flag.svg`) | Open PR on [a run's card](runs.md#opening-a-runs-pull-request) |
+| three sliders (`projects.svg`) | the [Projects](projects.md) page in the home page's list |
+| a compass (`compass.svg`) | the [Bearings](#bearings) tile |
 
 On the bar a tile with an icon shows only the icon, its badge (blocked agents, Captain's Calls waiting, runs needing you) and its tone; the home page's list shows the icon with the label and text. A tile whose source cannot be read (Herdr unavailable, firstmate unreadable or stale, no-mistakes unavailable) shows its words instead, so the bar says what is wrong. The Captain's Call widget has its cap while the grid has two rows; with more, its cell is too short for icon, label and text, and it keeps its label, text and badge.
 
@@ -54,7 +59,7 @@ The panel answers no Captain's Call, except one kind: a [change ready for review
    screenpad-agents show
    ```
 
-   (`~/.local/bin`, where `install.sh` puts the command, must be on your `PATH`; otherwise run `~/.local/bin/screenpad-agents show`.) It prints each agent with its pane, kind, state and task, then the Captain's Call count, and exits 1 when Herdr does not answer.
+   (`~/.local/bin`, where `install.sh` puts the command, must be on your `PATH`; otherwise run `~/.local/bin/screenpad-agents show`.) It prints each agent with its pane, kind, state and task, then the Captain's Call count, with `[firstmate]` each project and its settings, with `[usage]` the usage tile's two lines (it runs quota-axi once), and exits 1 when Herdr does not answer.
 
 3. Start it, and keep it on at every login:
 
@@ -62,18 +67,31 @@ The panel answers no Captain's Call, except one kind: a [change ready for review
    systemctl --user enable --now screenpad-agents
    ```
 
-4. Optionally, give its tiles spots in the bar, in `~/.config/screenpad/touchbar.toml` (at most three buttons in all, see [configuration](https://github.com/mmarsot/screenpad-linux/blob/main/docs/configuration.md#settings)):
+4. Optionally, give its tiles and pages spots in the bar, in `~/.config/screenpad/touchbar.toml` (up to six items: see [configuration](https://github.com/mmarsot/screenpad-linux/blob/main/docs/configuration.md#settings)):
 
    ```toml
-   [[button]]
-   icon = "utilities-terminal-symbolic"
-   label = "Agents"
-   tile = "agents"
+   [[bar]]
+   label = "Projects"
+   page = "projects"
 
-   [[button]]
+   [[bar]]
    label = "Calls"
    page = "calls"
+
+   [[bar]]
+   label = "Runs"
+   page = "runs"
+
+   [[bar]]
+   label = "Bearings"
+   tile = "bearings"
+
+   [[bar]]
+   label = "Limits"
+   tile = "usage"
    ```
+
+   The **Projects** page is a page item, like Captain's Call's. The `agents` tile (`tile = "agents"`, a helm; a tap focuses the first blocked agent) is no longer needed on the bar: the **Agents** page, with the agents' cards and their Focus, is still on the apps page, which lists it after the pages you gave a spot, and you can give it a spot with an `[[apps]]` item of its own (`page = "agents"`) or put the tile back on the bar with a `[[bar]]` block with `tile = "agents"`. Without a spot the app does not log that the `agents`, `calls` or `bearings` tile has none.
 
    The second item is Captain's Call's page, not a tile: a tap on it turns to the apps page on [Captain's Call](#captains-call-and-the-decisions-board), and the bar draws it with the page's cap, its count as a badge and its tone, as it would the `calls` tile. (A tile cannot turn the apps page: the touch bar's protocol has no message for that.) If your bar has `tile = "calls"` from an earlier version, change that line to `page = "calls"`; a `calls` tile you keep opens the decisions board straight away. Without spots the app still gives the apps page its **Agents** and **Captain's Call** pages; it logs that the `agents` tile has no spot (not the `calls` tile, which the page item replaces).
 
@@ -93,9 +111,12 @@ To turn it off: `systemctl --user disable --now screenpad-agents`. Removing the 
 | `[firstmate] poll` | seconds between two reads of firstmate, 60 to 3600, default 60 |
 | `[firstmate] review_command` | optional: the command that opens a change ready for review, as a string (split into words as a shell would, quotes allowed, but no shell runs it) or a list of words, with `{task}` in it where the task's id goes, for example `"/path/to/review-launcher {task}"`. Without it the [review buttons](#changes-ready-for-review) are only Approve |
 | `[firstmate] lavish` | the program that lists Lavish's sessions, to find the decisions board open: `"lavish-axi"` by default; or a list of words, such as a `node` and the script |
+| `[usage]` | optional: the [usage tile](usage.md): `command` (quota-axi), `poll` (60 to 3600 seconds) and `terminal` (where a tap opens its full report). Without it quota-axi is never run |
 | `[runs]` | optional: the [Runs page](runs.md#turning-it-on) and its settings (`repos`, `firstmate`, `command`, `poll`, `idle`, `watch_command`, and `[[runs.remote]]` for the runs of another machine over ssh). Without it no-mistakes is never run |
 
 ## The Agents page
+
+The Agents page is no longer what the bar's first spot is for: the [Projects](projects.md) page took it, and Focus (the helm tile, and an agent's card) is reachable from the page here, on the apps page, or by putting the `agents` tile back on the bar ([above](#turning-it-on)).
 
 The page is a grid four widgets wide and two to four rows high: Captain's Call first, then one widget per agent in Herdr's order, so a widget stays where it is while its agent runs. When the agents do not all fit in its 16 cells, the last one says how many more there are. The home page's list shows the page with its helm, the agent count and the number blocked.
 
@@ -163,6 +184,16 @@ which wakes firstmate once. Just before, the app looks for the board (steps 1 an
 The Captain's Call count is read again right after the request and when the board is open, so the count, the calls listed and the board agree as soon as they can. The checks run only while the app waits; otherwise it reads firstmate once a minute as always. Nothing of the wait is kept on disk: an app that restarts has none, and its button offers to open the board again.
 
 While the app waits, tapping queues no second note. A request keeps its id for 5 minutes (unless the board was seen open), so **Retry** meanwhile makes `fm-inbox.sh` replay a note it may have saved before failing, or one firstmate has not handled yet, rather than queue a second; after that, firstmate may have handled the note already (a replay would wake nothing), so a retry is a new request. When `fm-inbox.sh` answers (in its `fm-inbox-note.v1` JSON) that firstmate has already handled the replayed note, acknowledged or moved to `handled/`, the app asks once more at once under a new id. Nothing here sends anything to an agent, and the only thing it writes into firstmate is that note, through firstmate's own `fm-inbox.sh`; the board answers through firstmate's own intake.
+
+### Bearings
+
+The **Bearings** tile (`tile = "bearings"`, a compass) is the one-tap form of the above, for when you want the live decisions board and nothing else. A tap:
+
+- **opens the board straight away** when Lavish has it open and it is *fresh*: firstmate built it within the last 10 minutes (the age of the board's file, `fm-bearings-board.sh path`'s, never its contents);
+- otherwise **asks firstmate to rebuild it**, with one inbox note, `ScreenPad: rebuild the bearings board`, under a request id of its own (a retry within 5 minutes replays it rather than queueing a second), and the tile says **asking firstmate…** (in place of the compass, as a tile with an icon shows only it);
+- then **opens the board as soon as it is open and firstmate has rebuilt it**: the board's file is newer than the request, so the old board Lavish still lists is not mistaken for the new one. The app checks every 10 seconds while it waits, and stops after 3 minutes (30 seconds after firstmate replied with no board) with **no fresh board: tap to retry**; a failed note or an opener that failed says why in the tile, in red.
+
+The board is firstmate's *live, synchronized* decisions board: you answer on it, in the browser on the main screen, and its answers go back to firstmate through firstmate's own keyed-answer path; the app never answers a decision, builds or arms a board. Taps while the tile waits ask nothing more. Captain's Call's page and `calls` tile are unchanged: its button still opens an open board and asks for one when none is.
 
 ### Changes ready for review
 
@@ -234,8 +265,10 @@ A dialog that matches none of this, or one that must never be answered with a ke
   ```
 
   It takes about 3 s, and runs at most once a minute plus when you open Captain's Call's view, tap the `calls` tile or the board's button, and after a request. Looking for the board runs `FM_HOME=<home> <code>/bin/fm-bearings-board.sh path` and `lavish-axi`, opening it also `gio open` with the board's URL in a scope of its own (`systemd-run --user --scope`, outside the app's unit), and **Request board** runs `FM_HOME=<home> <code>/bin/fm-inbox.sh note --json --request-id <id> -- <text>`, then, every 10 seconds for at most 3 minutes, `fm-bearings-board.sh path`, `lavish-axi` and `FM_HOME=<home> <code>/bin/fm-inbox.sh receipts` (read-only), [above](#captains-call-and-the-decisions-board), in the thread of firstmate's control. Interrupting a task's agent runs `FM_HOME=<home> <code>/bin/fm-control.sh <task> interrupt` in a thread of its own; it, that note and the review notes above are the only firstmate commands the app runs that act on anything (`fm-bearings-board.sh` runs only as `path`, `fm-inbox.sh` otherwise only as `receipts`; the app never builds or arms a board, and never replies to or acknowledges a note). The count is the number of open decisions plus the captain's contributions (`decisions_open` and `contributions.captain` in its `fm-bearings.v1` output), shown with a `+` when the reader left some out; Captain's Call's page names each one the reader lists (a decision's `id` and `summary`, a contribution's `task`, `kind` and `reason`). Each task's endpoint, `<session>:<pane id>` for Herdr, joins the task to the agent Herdr reports in that pane. The app passes firstmate's commands only `FM_HOME`, none of the other `FM_*` variables of its own environment, and `lavish-axi`, `systemd-run` and `gio` no `FM_*` variable at all.
+- **firstmate's files**, for the [Projects page](projects.md#what-the-app-reads-and-writes): `data/projects.md` and `data/project-settings.toml` in `[firstmate] home`, read as text, read-only, every minute while the touch bar is connected (every 15 seconds while a change is pending), and never written; a change is one `fm-inbox.sh note --json --request-id <id> -- <text>`
+- **quota-axi**, with `[usage]`: the configured command, at most once a minute while the touch bar is connected ([the usage tile](usage.md#when-it-runs))
 - **no-mistakes**, with `[runs]`: only its read-only `axi`, `axi status` and `axi rounds` commands, [on the Runs page](runs.md#how-it-reads); with `[runs] firstmate`, firstmate's reader is asked for `--fields endpoints,paths`, for its tasks' worktrees. With a `[[runs.remote]]` the same read-only commands run over `ssh` (BatchMode, a 4 second connect timeout, one shared connection) on that machine, plus the directory names of its firstmate's `projects/` and its own reader, [as the Runs page says](runs.md#a-remote-machine). The Runs page acts only to open a run's pull request, on Open PR on the run's card: `systemd-run --user --scope --collect --quiet -- gio open <url>`, the same launch as the decisions board's, with the URL no-mistakes gave for the run's `pr` and only a GitHub pull request's (`https://github.com/<owner>/<repo>/pull/<number>`), in the Runs page's thread.
-- **The touch bar:** the socket in `$XDG_RUNTIME_DIR/screenpad/touchbar.sock`, as app `agents` with tiles `agents` and `calls` (only `agents` without firstmate), and `runs` with `[runs]`, and pages `agents` and `calls` (only `agents` without firstmate), and `runs` with `[runs]`. It talks to it through the [client library](https://github.com/mmarsot/screenpad-linux/blob/main/docs/app-api.md#the-python-client-library) `screenpad_app`, speaking app protocol 2: it sends a page or tile only when it changed, and connects again every 5 s while the daemon is not running or refuses its protocol version (a touch bar too old for it, logged once with what to update).
+- **The touch bar:** the socket in `$XDG_RUNTIME_DIR/screenpad/touchbar.sock`, as app `agents` with tiles `agents`, `calls` and `bearings` (only `agents` without firstmate), `runs` with `[runs]` and `usage` with `[usage]`, and pages `agents`, `calls` and `projects` (only `agents` without firstmate), and `runs` with `[runs]`. It talks to it through the [client library](https://github.com/mmarsot/screenpad-linux/blob/main/docs/app-api.md#the-python-client-library) `screenpad_app`, speaking app protocol 2: it sends a page or tile only when it changed, and connects again every 5 s while the daemon is not running or refuses its protocol version (a touch bar too old for it, logged once with what to update).
 
 ## Troubleshooting
 
