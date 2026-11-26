@@ -6,8 +6,10 @@ a table `attention[N]{provider,scope,kind,detail,remedy}:` of the providers
 it could not (a credential refused, a sign-in needed, an error). Pure: parse
 turns that text into one Provider each, the tightest window of one that
 could be read, "no data" with the reason for one that could not (never a
-made-up number), and Usage turns them into the tile. The tile has no icon:
-on the bar a tile with an icon shows only it, and the words are the point.
+made-up number), and Usage turns them into the tile. The tile is a
+gauge with the tightest provider's percent left as its badge and its tone; on
+the bar a tile with an icon shows only those, so with nothing read it shows
+its words instead, and the home page's list has the words either way.
 usagewatch.py runs quota-axi, at most once a minute, off the loop.
 """
 
@@ -16,9 +18,9 @@ import re
 from datetime import datetime, timedelta
 
 from screenpad_app import clip
-from screenpad_app.common import MAX_TILE_LABEL, MAX_TILE_TEXT
+from screenpad_app.common import MAX_BADGE, MAX_TILE_LABEL, MAX_TILE_TEXT
 
-from .common import USAGE_TILE
+from .common import GAUGE_ICON, USAGE_TILE, icon
 
 HEADER = re.compile(r"(?P<name>[A-Za-z_][\w-]*)\[(?P<n>\d+)\]\{(?P<columns>[^}]*)\}:")
 # A tile's tone follows the tightest provider: under LOW percent left it is
@@ -170,6 +172,9 @@ class Usage:
 
     def tile(self):
         msg = {"op": "set", "tile": USAGE_TILE, "label": "Limits", "tone": self.tone()}
+        left = [p.percent for p in self.providers or [] if p.percent is not None]
+        if left:
+            msg["icon"], msg["badge"] = icon(GAUGE_ICON), clip("%d%%" % round(min(left)), MAX_BADGE)
         if self.providers is None:
             msg["text"] = "quota-axi unavailable" if self.error else "reading quota…"
         elif not self.providers:

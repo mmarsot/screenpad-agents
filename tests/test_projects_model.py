@@ -115,6 +115,23 @@ class ChangeTests(unittest.TestCase):
             for value, _ in values:
                 self.assertTrue(Change("api", key, value).text())
 
+    def test_every_drafted_change_goes_in_one_note(self):
+        changes = [
+            Change("api", "preset", "refine"),
+            Change("site", "auto_merge", False),
+            Change("site", "model", "sonnet"),
+        ]
+        self.assertEqual(
+            model.note_text(changes),
+            "ScreenPad Projects page: set api preset to Refine; "
+            "set site auto-merge to off; set site worker model to sonnet",
+        )
+        self.assertEqual(model.note_text(changes[:1]), changes[0].text())
+        self.assertEqual(changes[0].phrase(), "set api preset to Refine")
+        # What a preset implies on the page.
+        self.assertEqual(model.BUNDLES["iterate"], {"validation": "full", "auto_merge": True})
+        self.assertEqual(model.BUNDLES["refine"], {"validation": "full", "auto_merge": False, "annotated": True})
+
     def test_a_change_is_reflected_once_the_files_have_it(self):
         p = Project("api", "pr", False, "refine", True, "desktop", "sonnet", "default")
         self.assertTrue(reflects(p, Change("api", "validation", "pr")))

@@ -19,14 +19,16 @@ tile = "usage"
 
 ## What it shows
 
-The tile has no icon: on the bar a tile with an icon shows only the icon, and the words are the point. Its first line is each provider quota-axi could read with its **percent left** and when its window resets (`codex 87% ↻26 Dec`, a clock time when it resets within a day); its second line the providers quota-axi could **not** read, with why:
+On the bar the tile is a **gauge** (`gauge.svg`) with the **tightest provider's percent left** as its badge (`87%`) and its tone; a tile with an icon shows only those. The home page's list shows the words with the icon: the first line is each provider quota-axi could read with its percent left and when its window resets (`codex 87% ↻26 Dec`, a clock time when it resets within a day); the second the providers quota-axi could **not** read, with why:
 
 ```text
 codex 100% ↻26 Dec
 no data: claude, copilot, opencode-go
 ```
 
-A single provider with no data says why: `claude no data: credentials_invalid`. The reason is quota-axi's own (`credentials_invalid`, a sign-in required, an error); there is **never a made-up number** for a provider it could not read. Several windows of one provider (a five-hour and a weekly one) count as the tightest. When the first line has no room for the resets, they go to the second, as far as it allows. The tile is green while every provider has more than 25 percent left, amber at 25 percent or less, red at 10 percent or less, and grey when none could be read. If a later run fails, the tile keeps what was read and marks it `(old)`; if the very first fails it says `quota-axi unavailable`, and the app logs why once.
+When no provider could be read there is nothing to put in a gauge: the tile shows these words instead, with no icon.
+
+A single provider with no data says why: `claude no data: credentials_invalid`. The reason is quota-axi's own (`credentials_invalid`, a sign-in required, an error); there is **never a made-up number** for a provider it could not read. Several windows of one provider (a five-hour and a weekly one) count as the tightest. When the first line has no room for the resets, they go to the second, as far as it allows. The tile is green while every provider has more than 25 percent left, amber at 25 percent or less, red at 10 percent or less, and grey when none could be read. If a later run fails, the tile keeps what was read and marks it `(old)`; if the very first fails it says `quota-axi unavailable` in words, and the app logs why once.
 
 ## When it runs
 

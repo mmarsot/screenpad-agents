@@ -176,7 +176,36 @@ class RunsPageTests(unittest.TestCase):
         page = self.accepted(b, fleet()).pages["runs"]
         self.assertEqual(page.rows, 4)
         heads = [w.look["label"] for w in page.widgets if w.col == 0]
-        self.assertEqual(heads, ["busy", "p0", "p1", "+3 more projects"])
+        # Pages of three rows with the pager under them, the busy project first.
+        self.assertEqual(heads, ["busy", "p0", "p1", "Previous"])
+        self.assertEqual(self.cells(b, fleet())["runs.span"].look["label"], "1-3 of 6")
+        self.assertEqual(
+            (self.cells(b, fleet())["runs.prev"].touch, self.cells(b, fleet())["runs.next"].touch), ("none", "tap")
+        )
+
+    def test_every_project_is_reachable_through_the_pager(self):
+        projects = [("/repos/p%d" % n, []) for n in range(8)]
+        b = self.board(projects)
+        f = fleet()
+
+        def shown():
+            self.cells(b, f)  # draw: the pager's ids are those of the page last built
+            return [w.look["label"] for w in self.accepted(b, f).pages["runs"].widgets if w.col == 0]
+
+        self.assertEqual(shown(), ["p0", "p1", "p2", "Previous"])
+        self.assertTrue(b.turn("runs.next"))
+        self.assertEqual(shown(), ["p3", "p4", "p5", "Previous"])
+        self.assertTrue(b.turn("runs.next"))
+        self.assertEqual(shown(), ["p6", "p7", "Previous"])
+        self.assertEqual(self.cells(b, f)["runs.span"].look["label"], "7-8 of 8")
+        self.assertEqual(self.cells(b, f)["runs.next"].touch, "none")
+        self.assertFalse(b.turn("runs.next"))  # nothing past the last page
+        self.assertTrue(b.turn("runs.prev"))
+        self.assertEqual(shown(), ["p3", "p4", "p5", "Previous"])
+        # Four projects fit one page: no pager, and the offset is forgotten.
+        b = self.board([("/repos/p%d" % n, []) for n in range(4)])
+        self.assertNotIn("runs.next", self.cells(b, f))
+        self.assertFalse(b.turn("runs.next"))
 
     def test_nothing_read_yet_or_no_mistakes_failing(self):
         b = Runs()

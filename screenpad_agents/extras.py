@@ -4,13 +4,14 @@ One object for the two optional parts that read their own sources in
 threads of their own, so app.py only hands them what happened:
 
   - the Projects page (projectpage.py, projectwatch.py), with [firstmate]:
-    the page, its thread, and what a tap on it means: a change of a
-    project's settings is asked of firstmate in a note;
+    the page, its thread, and what a tap on it means: a change is staged
+    in the draft, and Validate asks firstmate for all of them in one note;
   - the usage tile (usage.py, usagewatch.py), with [usage]: the tile, its
     thread, and the tap that opens quota-axi's full report.
 """
 
 from .common import PROJECTS_PAGE, USAGE_TILE
+from .projectmodel import note_text
 from .projectpage import Projects
 from .projectwatch import ProjectsWatch
 from .usage import Usage
@@ -64,13 +65,13 @@ class Extras:
             self.tell("projects", rest[0].error or rest[0].settings_error)
             return True
         if what == "project-note" and projects and watch:
-            change, error = rest
+            changes, error = rest
             if error:
-                self.log("firstmate was not told: %s: %s" % (change.text(), error))
-                projects.failed(change, error)
+                self.log("firstmate was not told: %s: %s" % (note_text(changes), error))
+                projects.failed(changes, error)
                 watch.pending(projects.has_pending())
             else:
-                self.log("asked firstmate: %s" % change.text())
+                self.log("asked firstmate: %s" % note_text(changes))
             return True
         if what == "usage" and self.usage:
             providers, error = rest
@@ -89,12 +90,11 @@ class Extras:
         settings."""
         if page != PROJECTS_PAGE or self.projects is None or self.projects_watch is None:
             return False
-        changed, change = self.projects.touch(widget)
-        if change is not None:
-            self.projects.ask(change)
+        changed, changes = self.projects.touch(widget)
+        if changes:
             self.projects_watch.pending(True)
-            self.projects_watch.send(change)
-        return changed or change is not None
+            self.projects_watch.send(changes)
+        return changed
 
     def tap_tile(self, tile):
         """A tap on a tile: the usage tile opens quota-axi's full report."""

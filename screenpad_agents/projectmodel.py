@@ -66,6 +66,14 @@ WORDS: dict[str, tuple[str, dict]] = {
     "model": ("worker model", {v: v for v, _ in MODELS}),
     "effort": ("worker effort", {v: v for v, _ in EFFORTS}),
 }
+# What each preset sets besides recording itself (docs/projects.md): the
+# settings a drafted preset implies on the page. Iterate also means no
+# milestone stops, which no other setting says.
+BUNDLES = {
+    "iterate": {"validation": "full", "auto_merge": True},
+    "refine": {"validation": "full", "auto_merge": False, "annotated": True},
+}
+NOTE_PREFIX = "ScreenPad Projects page: "
 DEFAULTS = {"annotated": True, "where": "desktop-first", "model": "opus", "effort": "default"}
 
 
@@ -108,9 +116,19 @@ class Change:
     key: str
     value: object
 
-    def text(self):
+    def phrase(self):
         what, words = WORDS[self.key]
-        return "ScreenPad Projects page: set %s %s to %s" % (self.project, what, words[self.value])
+        return "set %s %s to %s" % (self.project, what, words[self.value])
+
+    def text(self):
+        return NOTE_PREFIX + self.phrase()
+
+
+def note_text(changes):
+    """The one note that asks firstmate for every change: the page's name,
+    then each change as `set <project> <setting> to <value>`, separated by
+    semicolons."""
+    return NOTE_PREFIX + "; ".join(c.phrase() for c in changes)
 
 
 def reflects(project, change):

@@ -178,7 +178,7 @@ class FleetTests(unittest.TestCase):
         self.accepted(f)
 
     def test_the_icons_are_square_svgs_in_icons(self):
-        names = {"helm", "captain", "lighthouse", "back", "spyglass", "anchor", "flag", "projects", "compass"}
+        names = {"helm", "captain", "lighthouse", "back", "spyglass", "anchor", "flag", "projects", "compass", "gauge"}
         self.assertEqual({n[: -len(".svg")] for n in os.listdir(ICONS)}, names)
         for name in names:
             path = icon(name)

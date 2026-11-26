@@ -91,7 +91,9 @@ class TileTests(unittest.TestCase):
         self.assertEqual(tile["label"].split(" ↻")[0], "codex 100%")
         self.assertRegex(tile["label"], r"\Acodex 100% ↻26 Dec\Z")
         self.assertEqual(tile["text"], "no data: claude, copilot, opencode-go")
-        self.assertNotIn("icon", tile)  # on the bar an icon would hide these words
+        # On the bar a tile with an icon shows only it, its badge and its tone: the gauge
+        # with the tightest percent left; the words are for the home page's list.
+        self.assertEqual((tile["icon"].rsplit("/", 1)[-1], tile["badge"]), ("gauge.svg", "100%"))
         self.assertLessEqual(len(tile["text"]), 48)
 
     def test_one_provider_with_no_data_says_why(self):
@@ -124,16 +126,20 @@ class TileTests(unittest.TestCase):
             (tile["tone"], tile["label"], tile["text"]), ("neutral", "Limits", "claude no data: credentials_invalid")
         )
         self.assertNotIn("%", tile["label"] + tile["text"])
+        self.assertNotIn("icon", tile)  # nothing read: the words show on the bar, no gauge, no badge
+        self.assertNotIn("badge", tile)
 
     def test_before_the_first_read_and_when_quota_axi_fails(self):
         self.assertEqual(usage.Usage().tile()["text"], "reading quota…")
         failed = usage.Usage()
         failed.set(None, "quota-axi: No such file or directory")
         self.assertEqual(failed.tile()["text"], "quota-axi unavailable")
+        self.assertNotIn("icon", failed.tile())
         # A failure after a read keeps what was read, marked old.
         tile = self.tile(error="quota-axi gave no answer in 60 s")
         self.assertEqual(tile["label"].split(" ")[0], "codex")
         self.assertTrue(tile["text"].endswith(" (old)"))
+        self.assertEqual(tile["badge"], "100%")  # what was read stays
         self.assertLessEqual(len(tile["text"]), 48)
 
     def test_set_says_whether_the_tile_changed(self):

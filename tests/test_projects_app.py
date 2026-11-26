@@ -1,8 +1,9 @@
 """The Projects page in the app's loop (extras.py, projectwatch.py) against
-the stand-in touch bar: the page drawn from firstmate's registry, a tap
-sending one note through firstmate's capture surface and showing the change
-pending until the files reflect it, a note that fails, reading only while the
-touch bar is connected, and that the app never writes firstmate's files."""
+the stand-in touch bar: the page drawn from firstmate's registry, taps staged
+as a draft that sends nothing, Validate sending one note through firstmate's
+capture surface for every change and showing them pending until the files
+reflect them, Discard, a note that fails, reading only while the touch bar is
+connected, and that the app never writes firstmate's files."""
 
 import os
 import threading
@@ -58,52 +59,82 @@ class ProjectsLoopTests(unittest.TestCase):
             (page.look["title"], page.look["text"], page.columns, page.rows), ("Projects", "2 projects", 6, 4)
         )
         labels = [w.look.get("label") for w in page.widgets]
-        self.assertEqual(labels, ["api", "Iterate", "Refine", "Settings", "site", "Iterate", "Refine", "Settings"])
+        self.assertEqual(
+            labels,
+            ["api", "Iterate", "Refine", "Settings", "site", "Iterate", "Refine", "Settings", "Discard", "Validate"],
+        )
         self.assertEqual(self.widgets(rig)[self.refine(rig)].touch, "tap")
         self.assertEqual(rig.logged, [])
 
-    def test_a_preset_tap_sends_one_note_and_shows_it_pending_until_the_files_have_it(self):
+    def test_taps_stage_a_draft_and_validate_sends_one_note_for_every_change(self):
         rig = self.rig()
         before = self.files(rig)
         self.tap(rig, self.refine(rig))
+        rig.until(lambda: rig.apps.pages["projects"].look.get("badge") == "1")
+        # Staged, not sent: nothing reaches firstmate until Validate.
+        rig.turn(10)
+        self.assertEqual(self.firstmate.notes, [])
+        site_iterate = next(w for w, x in self.widgets(rig).items() if x.row == 1 and x.look.get("label") == "Iterate")
+        self.tap(rig, site_iterate)
+        rig.until(lambda: rig.apps.pages["projects"].look.get("badge") == "2")
+        self.assertEqual(rig.apps.pages["projects"].look["text"], "2 projects · 2 to validate")
+        self.tap(rig, "pj.validate")
         rig.until(lambda: len(self.firstmate.notes) == 1)
         request_id, text = self.firstmate.notes[0]
-        self.assertEqual(text, REFINE)
+        self.assertEqual(text, REFINE + "; set site preset to Iterate")
         self.assertRegex(request_id, r"\Ascreenpad-project-[0-9]+-[0-9a-f]{8}\Z")
-        rig.until(lambda: rig.apps.pages["projects"].look.get("badge") == "1")
-        self.assertEqual(rig.apps.pages["projects"].look["text"], "2 projects · 1 asked")
-        self.assertIn("asked firstmate: " + REFINE, rig.logged)
-        # A second tap while it is pending sends nothing more.
-        self.tap(rig, self.refine(rig))
+        rig.until(lambda: rig.apps.pages["projects"].look["text"] == "2 projects · 2 asked")
+        self.assertIn("asked firstmate: " + text, rig.logged)
+        # Validate again sends nothing: the draft is empty.
+        self.tap(rig, "pj.validate")
         rig.turn(10)
         self.assertEqual(len(self.firstmate.notes), 1)
-        # firstmate applies it: the registry loses +yolo, the settings file says refine.
+        # firstmate applies the first: it stops being pending, the other stays.
         self.write(rig, "projects.md", model_registry(yolo=False))
         self.write(rig, "project-settings.toml", '[projects.api]\npreset = "refine"\n')
-        rig.until(lambda: "badge" not in rig.apps.pages["projects"].look)
+        rig.until(lambda: rig.apps.pages["projects"].look["text"] == "2 projects · 1 asked")
         self.assertEqual(self.widgets(rig)[self.refine(rig)].look["tone"], "accept")
         # The app wrote neither file: only the test did.
         self.assertEqual(sorted(self.files(rig)), ["project-settings.toml", "projects.md"])
         self.assertTrue(before["projects.md"] < self.files(rig)["projects.md"])
 
-    def test_a_single_setting_is_asked_from_the_project_s_view(self):
+    def test_discard_sends_nothing(self):
+        rig = self.rig()
+        self.tap(rig, self.refine(rig))
+        rig.until(lambda: rig.apps.pages["projects"].look.get("badge") == "1")
+        self.tap(rig, "pj.discard")
+        rig.until(lambda: "badge" not in rig.apps.pages["projects"].look)
+        self.tap(rig, "pj.validate")
+        rig.turn(10)
+        self.assertEqual(self.firstmate.notes, [])
+
+    def test_a_single_setting_is_staged_from_the_project_s_view(self):
         rig = self.rig()
         settings = next(w for w, x in self.widgets(rig).items() if x.look.get("label") == "Settings")
         self.tap(rig, settings)
         rig.until(lambda: "pj.back" in self.widgets(rig))
         self.tap(rig, "pj.auto_.off")
+        rig.until(lambda: getattr(self.widgets(rig).get("pj.auto_.on"), "look", {}).get("text") == "On → Off, draft")
+        self.assertEqual(self.firstmate.notes, [])
+        self.tap(rig, "pj.validate")
         rig.until(lambda: self.firstmate.notes)
         self.assertEqual(self.firstmate.notes[0][1], "ScreenPad Projects page: set api auto-merge to off")
-        rig.until(lambda: self.widgets(rig)["pj.auto_.on"].look["text"] == "On → Off, asked")
+        rig.until(lambda: getattr(self.widgets(rig).get("pj.auto_.off"), "look", {}).get("text") == "On → Off, asked")
 
-    def test_a_note_that_fails_is_logged_and_shown_not_pending(self):
+    def test_a_note_that_fails_is_logged_shown_and_the_draft_is_kept(self):
         self.firstmate.request_error = "fm-inbox.sh note failed: exit 1"
         rig = self.rig()
         self.tap(rig, self.refine(rig))
+        rig.until(lambda: rig.apps.pages["projects"].look.get("badge") == "1")
+        self.tap(rig, "pj.validate")
         rig.until(lambda: any(line.startswith("firstmate was not told") for line in rig.logged))
-        rig.until(lambda: "badge" not in rig.apps.pages["projects"].look)
-        self.assertEqual(self.firstmate.notes, [(self.firstmate.notes[0][0], REFINE)])
-        self.assertEqual(rig.apps.pages["projects"].look["tone"], "neutral")
+        # Back to a draft, not pending: the captain can validate again.
+        rig.until(lambda: rig.apps.pages["projects"].look["text"] == "2 projects · 1 to validate")
+        self.firstmate.request_error = None
+        self.tap(rig, "pj.validate")
+        rig.until(lambda: len(self.firstmate.notes) == 2)
+        self.assertEqual(self.firstmate.notes[1][1], REFINE)
+        self.assertNotEqual(self.firstmate.notes[0][0], self.firstmate.notes[1][0])
 
     def test_an_unreadable_registry_is_shown_and_logged_once(self):
         rig = Rig(self, self.herdr, self.firstmate)
@@ -172,11 +203,11 @@ class ProjectsReadTests(unittest.TestCase):
     def test_a_note_is_sent_and_reported(self):
         watch = self.watch()
         change = model.Change("api", "preset", "refine")
-        watch.send(change)
+        watch.send([change])
         deadline = time.monotonic() + 3
         while not self.posts and time.monotonic() < deadline:
             time.sleep(0.01)
-        self.assertEqual(self.posts, [("project-note", change, None)])
+        self.assertEqual(self.posts, [("project-note", [change], None)])
         self.assertEqual(NOTE, "1793706159-abc123")
 
 

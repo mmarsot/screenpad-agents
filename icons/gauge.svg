@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- The usage tile: a fuel gauge, how much quota is left. -->
+  <circle cx="32" cy="32" r="30" fill="#16294a" stroke="#e8eef7" stroke-width="2.5"/>
+  <g fill="none" stroke-width="6" stroke-linecap="butt">
+    <path d="M12.5 40 A19.5 19.5 0 0 1 17.5 26.7" stroke="#d9483b"/>
+    <path d="M18.9 25.2 A19.5 19.5 0 0 1 32 12.5" stroke="#f2b84b"/>
+    <path d="M33.5 12.6 A19.5 19.5 0 0 1 51.5 40" stroke="#5fc16f"/>
+  </g>
+  <line x1="32" y1="40" x2="42.5" y2="26" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round"/>
+  <circle cx="32" cy="40" r="4.4" fill="#ffffff" stroke="#101418" stroke-width="1.2"/>
+  <line x1="19" y1="50" x2="45" y2="50" stroke="#e8eef7" stroke-width="3.2" stroke-linecap="round"/>
+</svg>

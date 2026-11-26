@@ -6,7 +6,7 @@ Off the loop, so a touch is handled at once:
     (projectmodel.read: two small files, read-only) every PROJECTS_POLL
     seconds, every PENDING_POLL while a change the captain asked for is not
     yet in them, and not at all while the touch bar is not connected;
-  - it sends the captain's request for a change to firstmate, with one note
+  - it sends the captain's changes, once validated, to firstmate in one note
     through its capture surface (Firstmate.note: fm-inbox.sh note --json
     --request-id <id> -- <text>, one wake), and then reads sooner.
 
@@ -27,7 +27,7 @@ from .firstmate import FirstmateError
 
 def request_id():
     """A new id for one request, as fm-inbox.sh note --request-id takes it:
-    each tap is its own note."""
+    each validation is its own note."""
     return "screenpad-project-%d-%s" % (time.time(), secrets.token_hex(4))
 
 
@@ -68,14 +68,14 @@ class ProjectsWatch:
         except Exception as e:
             self.post("projects", model.Read(error=_why(e, OSError)))
 
-    def _note(self, change, rid):
+    def _note(self, changes, rid):
         try:
-            if self.firstmate.note(rid, change.text()) is None:
+            if self.firstmate.note(rid, model.note_text(changes)) is None:
                 raise FirstmateError("fm-inbox.sh says the request was handled already")
         except Exception as e:
-            self.post("project-note", change, _why(e, FirstmateError))
+            self.post("project-note", changes, _why(e, FirstmateError))
         else:
-            self.post("project-note", change, None)
+            self.post("project-note", changes, None)
 
     # --- on the loop ---------------------------------------------------------
 
@@ -90,9 +90,9 @@ class ProjectsWatch:
             self._pending = pending
             self._jobs.put(("pending", pending))
 
-    def send(self, change):
-        """Ask firstmate for change, in a note of its own."""
-        self._jobs.put(("note", change, request_id()))
+    def send(self, changes):
+        """Ask firstmate for changes (a list), in one note."""
+        self._jobs.put(("note", list(changes), request_id()))
 
     def stop(self):
         self._jobs.put(None)
