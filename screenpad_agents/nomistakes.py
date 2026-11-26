@@ -53,6 +53,10 @@ class NoMistakesError(Exception):
     pass
 
 
+class Unreachable(NoMistakesError):
+    """A remote machine could not be reached (ssh.py): nothing was read."""
+
+
 class NotARepo(NoMistakesError):
     """The directory is no repository no-mistakes watches."""
 

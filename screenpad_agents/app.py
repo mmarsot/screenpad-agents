@@ -36,6 +36,7 @@ Captain's Call).
 import os
 import queue
 import select
+import subprocess
 import sys
 import threading
 import time
@@ -59,6 +60,7 @@ from .common import why as _why
 from .firstmate import FirstmateError
 from .fleet import CALLS_WIDGET, Fleet
 from .herdr import HerdrError
+from .remotewatch import build
 from .reviewrequest import Reviews
 from .runwatch import RunsWatch
 from .screen import guarded_send, read_screen
@@ -76,6 +78,7 @@ class App:
         nomistakes=None,
         opener=None,
         launcher=None,
+        ssh_run=None,
     ):
         self.config, self.herdr, self.firstmate = config, herdr, firstmate
         self.socket_path, self.clock = socket_path, clock
@@ -85,7 +88,8 @@ class App:
         if config.runs is not None and nomistakes is not None:
             opens = {"opener": opener} if opener is not None else {}
             opens.update({"launcher": launcher} if launcher is not None else {})
-            self.runs = RunsWatch(config.runs, nomistakes, config.home, self._post, clock, **opens)
+            remotes = build(config.runs, self._post, clock, ssh_run or subprocess.run)
+            self.runs = RunsWatch(config.runs, nomistakes, config.home, self._post, clock, remotes=remotes, **opens)
         self.stopping = threading.Event()
         self._results: queue.Queue = queue.Queue()
         self._jobs: queue.Queue = queue.Queue()
@@ -112,6 +116,7 @@ class App:
             workers += [("firstmate", self._firstmate_worker), ("control", self._control_worker)]
         if self.runs is not None:
             workers.append(("runs", self.runs.worker))
+            workers += [("runs-" + name, remote.worker) for name, remote in self.runs.remotes.items()]
         self._threads = [threading.Thread(target=run, name=name, daemon=True) for name, run in workers]
         for t in self._threads:
             t.start()
@@ -268,9 +273,11 @@ class App:
             self._tell("firstmate", error)
             if self.runs is not None:
                 self.runs.update(self.fleet)
-        elif what in ("runs", "run", "opened", "launched"):
+        elif what in ("runs", "remote", "run", "opened", "launched"):
             if what == "runs":
                 self._tell("no-mistakes", rest[1])
+            elif what == "remote":
+                self._tell(rest[0], rest[2])
             elif what == "opened":
                 _, url, error = rest
                 self.log("PR %s not opened: %s" % (url, error) if error else "opened PR %s" % url)

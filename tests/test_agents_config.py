@@ -258,5 +258,83 @@ class CommandTests(unittest.TestCase):
         self.assertIn("Herdr unavailable", done.stdout)
 
 
+class RemoteConfigTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.script = os.path.join(tmp.name, "viewer.py")
+        with open(self.script, "w") as f:
+            f.write("pass\n")
+
+    def runs(self, **runs):
+        data = {"herdr": {"session": "default"}, "runs": runs}
+        return parse("agents.toml", data).runs
+
+    def remote(self, **table):
+        base = {"name": "desktop", "ssh": "desktop", "home": "/home/m/fm"}
+        return self.runs(remote=[dict(base, **table)]).remotes[0]
+
+    def test_a_remote_alone_is_enough_for_the_runs_page(self):
+        runs = self.runs(remote=[{"name": "desktop", "ssh": "desktop", "repos": ["/srv/api/"]}])
+        self.assertEqual(runs.repos, [])
+        r = runs.remotes[0]
+        self.assertEqual((r.name, r.ssh, r.home, r.code, r.repos), ("desktop", "desktop", None, None, ["/srv/api"]))
+        self.assertEqual((r.command, r.terminal, r.watch_script), (["no-mistakes"], None, None))
+        self.assertEqual(runs.machine, "laptop")
+
+    def test_every_setting(self):
+        r = self.remote(
+            code="/opt/fm",
+            repos=["/srv/api"],
+            command="/opt/bin/no-mistakes",
+            terminal="term -x 'bash -c {command}'",
+            watch_script=self.script,
+        )
+        self.assertEqual(
+            (r.home, r.code, r.repos, r.command), ("/home/m/fm", "/opt/fm", ["/srv/api"], ["/opt/bin/no-mistakes"])
+        )
+        self.assertEqual((r.terminal, r.watch_script), (["term", "-x", "bash -c {command}"], self.script))
+        self.assertEqual(self.remote().code, "/home/m/fm")  # the checkout is the home by default
+        self.assertEqual(self.runs(machine="desk", remote=[{"name": "n", "ssh": "h", "home": "/h"}]).machine, "desk")
+
+    def test_errors(self):
+        bad: list[tuple[dict, str]] = [
+            ({"name": "a b"}, "name must be a short name"),
+            ({"ssh": "-oProxyCommand=x"}, "ssh must be an ssh target"),
+            ({"ssh": "host name"}, "ssh must be an ssh target"),
+            ({"ssh": 3}, "ssh must be an ssh target"),
+            ({"home": "relative"}, "home must be an absolute path"),
+            ({"home": None, "code": "/c", "repos": ["/r"]}, "code needs home"),
+            ({"home": None}, "no repos and no home"),
+            ({"repos": ["rel"]}, "repos must be a list of absolute paths"),
+            ({"terminal": ["t", "{command}"]}, "terminal and watch_script go together"),
+            ({"watch_script": "/x"}, "terminal and watch_script go together"),
+            ({"terminal": ["t"], "watch_script": "SCRIPT"}, "terminal must hold {command}"),
+            ({"terminal": ["t", "{command}"], "watch_script": "/nonexistent.py"}, "watch_script must be a file"),
+            ({"command": []}, "[[runs.remote]] command"),
+            ({"color": "red"}, "unknown key in [[runs.remote]] 'color'"),
+        ]
+        for table, message in bad:
+            table = {k: (self.script if v == "SCRIPT" else v) for k, v in table.items()}
+            base = {"name": "desktop", "ssh": "desktop", "home": "/home/m/fm"}
+            base.update(table)
+            if base.get("home", 1) is None:
+                del base["home"]
+            with self.assertRaisesRegex(ConfigError, message.replace("[", r"\[").replace("]", r"\]")):
+                self.runs(remote=[base])
+        two = [{"name": "d", "ssh": "d", "home": "/h"}] * 2
+        with self.assertRaisesRegex(ConfigError, "two .* are named d"):
+            self.runs(remote=two)
+        with self.assertRaisesRegex(ConfigError, "machine must be a short name that no remote has"):
+            self.runs(machine="d", remote=two[:1])
+        with self.assertRaisesRegex(ConfigError, "array of tables"):
+            self.runs(remote={"name": "d"})
+
+    def test_without_a_remote_the_runs_config_is_what_it_was(self):
+        with self.assertRaisesRegex(ConfigError, "no repos, and no"):
+            self.runs()
+        self.assertEqual(self.runs(repos=[os.path.dirname(self.script)]).remotes, [])
+
+
 if __name__ == "__main__":
     unittest.main()

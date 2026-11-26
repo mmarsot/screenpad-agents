@@ -2,6 +2,7 @@
 
 With a `[runs]` table in its config, the [agent app](agents.md) adds a second page to the touch bar's apps page: **Runs**, the [no-mistakes](https://github.com/kunchenguid/no-mistakes) pipeline runs of your projects and their status. It only reads them: it starts, answers, aborts, retries or syncs no run, and never touches the no-mistakes daemon. The one thing it does is open a run's pull request in your browser, when you ask.
 
+- **both machines**: with a [`[[runs.remote]]`](#a-remote-machine) in the config, the runs of another machine (a desktop reached over ssh) too, each labelled with its machine, and a row that says so when that machine cannot be reached;
 - **one row per project**: the project's widget, then its active runs, then its recent ones (the newest run of each branch not shown yet), up to four runs a row;
 - **each run joined to its agent and its firstmate task**: a run shows under the task's name when it is one, otherwise under its branch, with what it is doing (`running · review`, `waiting on you · review`, `failed · push`, `passed · PR #12`);
 - **a warning** when one agent, one repo copy or one branch has more than one active run: normally there is at most one per agent. The project's widget turns red and says so, and the runs involved carry a `2+` badge;
@@ -40,8 +41,46 @@ tile = "runs"
 | `[runs] poll` | seconds between two reads while a run is active, 10 to 300, default 20 |
 | `[runs] watch_command` | optional: the command that opens a live view of a run, as a string (split into words as a shell would, quotes allowed, but no shell runs it) or a list of words, with `{run}` in it where the run's id goes, for example `"/path/to/watch-run {run}"`. Without it a run's card has no [Watch](#watching-a-run) |
 | `[runs] idle` | seconds between two reads while none is, 30 to 3600 and at least `poll`, default 120 |
+| `[runs] machine` | what this machine is called on the page once there is a remote, `"laptop"` by default; nothing is labelled while there is none |
+| `[[runs.remote]]` | optional, repeatable: another machine whose runs the page shows too, read over ssh; see [A remote machine](#a-remote-machine) |
 
 Without `[runs]` there is no Runs page and no `runs` tile, and no-mistakes is never run.
+
+## A remote machine
+
+The page reads the machine it runs on. Add a `[[runs.remote]]` table for each other machine whose runs it should show, for example a desktop where most of the work runs:
+
+```toml
+[runs]
+machine = "laptop"                           # what this machine is called; the default
+
+[[runs.remote]]
+name = "desktop"                             # its label on the page
+ssh = "desktop"                              # the ssh target: an alias of ~/.ssh/config, or user@host
+home = "/home/you/fm-homes/desktop"          # its firstmate home, to find its projects and tasks
+repos = []                                   # repo directories there to watch, besides firstmate's
+terminal = ["ptyxis", "--new-window", "-T", "Watch: {run} on {name}", "-x", "bash -c {command}"]
+watch_script = "/home/you/code/nm-watch.py"  # the viewer Watch runs there (a file here, sent over ssh)
+```
+
+| Setting | Meaning |
+|---|---|
+| `name` | the machine's label, up to 20 letters, digits, `_` and `-`; different from `[runs] machine` and the other remotes' |
+| `ssh` | the ssh target; `ssh` is run with `BatchMode=yes` (it never asks for a password or a passphrase: key authentication must work unattended) and a 4 second connect timeout |
+| `home` | the machine's firstmate home, an absolute path there: its registered clones (the directories in `<home>/projects/`) and its live tasks' worktrees (its own reader, below) are watched, like this machine's with `[runs] firstmate` |
+| `code` | the machine's firstmate checkout with `bin/fm-bearings-snapshot.sh`, `home` by default |
+| `repos` | repo directories on the machine to watch, `[]` by default; `home` or `repos` is needed |
+| `command` | the no-mistakes program there, `"no-mistakes"` by default, as a string or a list of words |
+| `terminal` | the words of a terminal window opened here for Watch, with `{command}` in one of them (replaced by the line to run in it, quoted), and `{run}` and `{name}` where the run's id and the machine's name go |
+| `watch_script` | a script here, by absolute path, that is the live view: it is sent to the machine and run there with the run's id, and only reads. `terminal` and `watch_script` go together; without them a remote run's card has no Watch |
+
+What it does for each remote machine:
+
+- **Reads** run in a thread of the machine's own, so a slow or dead machine never delays this machine's runs or a touch. The page asks the same read-only commands as here ([How it reads](#how-it-reads)), each over `ssh <target> 'cd <dir> && no-mistakes axi …'`, sharing one ssh connection (`ControlMaster`, kept 60 seconds in `$XDG_RUNTIME_DIR`). The machine is read as often as this one: every `[runs] poll` seconds while one of its runs is active, `idle` otherwise, and not while the touch bar is disconnected. Its firstmate's reader is run over ssh at most once a minute, and its projects directory listed with each read.
+- **Labels** every run with its machine: a run's cell reads `desktop · running · review`, a project's widget `desktop · 1 active`, a card's first line starts with the machine, and this machine's runs say `laptop` the same way. Two machines' projects are separate even when their paths are the same, and the warning for more than one active run is checked per machine.
+- **Says when the machine cannot be reached**: when ssh cannot connect or authenticate, or the machine answers nothing within 12 seconds, a red row `desktop unreachable` with ssh's own message (`ssh: connect to host desktop port 22: Connection timed out`) is the page's first row, the tile says `desktop unreachable` beside its count and turns amber, and the machine's runs leave the page, so a missing desktop never looks like a desktop with nothing running. The journal logs it once, and `desktop answers again` when it recovers. A failing ssh is found by its first call, within the connect timeout, not by one call per project.
+- **Opens** a remote run's pull request from its card with the run's URL, like any run. Its card has no Review, Approve or Changes (those are for this machine's firstmate tasks) and its Focus says `runs on desktop`: the agents are not in this machine's Herdr.
+- **Watch** on a remote run's card opens a new window of `terminal` here that runs `ssh -t <target>` and, there, `python3 -I` on the viewer `watch_script` (its source is sent in the command, so nothing is installed or changed on the machine), with the run's id, then waits for a key before closing. It reads only. The same `terminal` and `watch_script` words as [Watch](#watching-a-run) otherwise: started detached in a scope of its own and not waited for beyond 2 seconds.
 
 ## Which projects
 
@@ -58,7 +97,7 @@ A run is made on a branch; no-mistakes resolves the run of a repo copy's current
 - the **agent** whose Herdr `cwd` is that copy, or else the agent in the pane of the task whose worktree it is (the task's endpoint, as on the Agents page);
 - the **firstmate task** whose recorded worktree is that copy, or else the task of that agent.
 
-A run on a branch no copy resolves (an old run, a removed worktree) shows without an agent or task.
+A run on a branch no copy resolves (an old run, a removed worktree) shows without an agent or task. On a [remote machine](#a-remote-machine) a copy's task is the one its own firstmate records there, and no agent of this machine's Herdr is joined.
 
 ## Status, and what needs you
 
@@ -137,6 +176,8 @@ Only these no-mistakes commands run, each read-only, and no other (`screenpad_ag
 | `no-mistakes axi status --run <id>` | | each active run in detail: steps, gate, outcome, error; and the open card's run |
 | `no-mistakes axi rounds --run <id> --step <step> --json` | | the findings of the open card's steps that have some |
 
+With a [remote machine](#a-remote-machine) these same commands run over ssh there, and these two firstmate reads: `find -L <home>/projects -mindepth 1 -maxdepth 1 -type d`, and `FM_HOME=<home> <code>/bin/fm-bearings-snapshot.sh --json --fields endpoints,paths`. `screenpad_agents/ssh.py` refuses any no-mistakes command the local client would; nothing there is started, answered, aborted or changed.
+
 The one command the Runs page runs that acts is opening a pull request, on Open PR: `systemd-run --user --scope --collect --quiet -- gio open <url>`, with the run's `pr` the commands above gave ([Opening a run's pull request](#opening-a-runs-pull-request)); `systemd-run` and `gio` get no `FM_*` variable. It runs in the Runs page's thread, between two reads.
 
 firstmate's task worktrees come from its own reader: with `[runs] firstmate`, the reader the app already runs is asked for `--fields endpoints,paths` instead of `--fields endpoints`. Of firstmate's home the app reads nothing else but the names of the directories in `<home>/projects/`.
@@ -152,7 +193,10 @@ Each call takes about 30 ms. They run in a thread of their own, off the app's lo
 | **No projects** | none of the directories configured or found is a repository no-mistakes watches |
 | A run shows without its agent or task | no repo copy the app knows has the run's branch checked out, or no Herdr agent's `cwd` is that copy; `screenpad-agents show` lists each run with its pane |
 | A run's card has no **Review**, **Approve** or **Changes** | it is not the newest run of its branch, it has not ended green, it has no GitHub pull request, no firstmate task is joined to it, or (for Review and Changes) `[firstmate] review_command` is not set; see [A ready pull request](#a-ready-pull-request) |
-| A run's card has no **Watch** | `[runs] watch_command` is not set |
+| A run's card has no **Watch** | `[runs] watch_command` is not set (for a remote machine's run: its `terminal` and `watch_script` are) |
+| **desktop unreachable** (a remote machine's name) | ssh said why on the row. Does `ssh <target> true` work from this session without a prompt (`BatchMode`: a key, no passphrase asked; a host key already trusted)? Is the machine up, and its name or Tailscale address right? The unit's ssh uses your `~/.ssh/config`, not a terminal's agent unless `SSH_AUTH_SOCK` is set for it |
+| A remote machine shows but its tasks' runs have no task name | its firstmate reader failed (`FM_HOME` or `code` wrong there): the projects and runs still show; `screenpad-agents show` prints the runs it read |
+| Watch on a remote run opens a window that closes at once or says an error | the window runs `ssh -t` first: read what it printed before closing; `python3` must exist on the machine, and the viewer is read from `watch_script` here when Watch is tapped |
 | **Watch** says **not opened** | the button says why: `systemd-run` missing, or the command exited non-zero within 2 seconds (its message is in the journal) |
 | A run's card has no **Open PR** | no-mistakes has not opened its pull request yet (the run's `pr` in `no-mistakes axi status --run <id>` is empty), or that `pr` is no GitHub pull request URL: only `https://github.com/<owner>/<repo>/pull/<number>` is opened |
 | **Open PR** says **not opened** | the button says why (the journal has it whole): `systemd-run` not found by the unit, it could not make the scope, or `gio open` failed (its own message is in the journal, `journalctl --user -u screenpad-agents`), as for [the decisions board](agents.md#troubleshooting) |

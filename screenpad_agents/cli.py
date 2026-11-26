@@ -3,6 +3,7 @@
 import argparse
 import json
 import signal
+import subprocess
 import sys
 
 from .app import App
@@ -12,6 +13,7 @@ from .firstmate import Firstmate, FirstmateError
 from .fleet import Fleet
 from .herdr import Herdr, HerdrError
 from .nomistakes import NoMistakes, NoMistakesError
+from .remotewatch import build
 from .runwatch import RunsWatch
 
 
@@ -46,7 +48,7 @@ def cmd_run(args):
     return 0
 
 
-def cmd_show(args):
+def cmd_show(args, ssh_run=subprocess.run):
     """Read Herdr and firstmate once and print what the touch bar would show."""
     config = load(args.config)
     herdr, firstmate = clients(config)
@@ -62,11 +64,17 @@ def cmd_show(args):
             fleet.set_bearings(None, str(e))
     watch = None
     if config.runs is not None:
-        watch = RunsWatch(config.runs, NoMistakes(config.runs.command), config.home, None)
+        remotes = build(config.runs, None, run=ssh_run)
+        watch = RunsWatch(config.runs, NoMistakes(config.runs.command), config.home, None, remotes=remotes)
         try:
             watch.board.set_scan(watch.scan(*watch.places(fleet)))
         except NoMistakesError as e:
             watch.board.set_scan(None, str(e))
+        for name, remote in remotes.items():
+            try:
+                watch.board.set_remote(name, remote.scan())
+            except NoMistakesError as e:
+                watch.board.set_remote(name, None, str(e))
     if args.json:
         print(json.dumps(fleet.messages() + (watch.board.messages(fleet) if watch else []), indent=2))
         return 0
@@ -91,11 +99,14 @@ def show_runs(board, fleet):
     print("no-mistakes runs: %s" % board.summary(views))
     if board.error:
         print("  " + board.error)
+    for name, why in board.down.items():
+        print("  %s unreachable: %s" % (name, why))
     for p in board.scan.projects if board.scan else []:
-        print("  %s (%s)%s" % (p.name, p.repo, ": " + p.error if p.error else ""))
-        for v in views[p.repo]:
+        where = "%s: " % board.label(p) if board.machines else ""
+        print("  %s%s (%s)%s" % (where, p.name, p.repo, ": " + p.error if p.error else ""))
+        for v in views[p.key]:
             marks = "".join(m for m, on in (("!", v.duplicate), ("*", v.attention)) if on)
-            print("    %-2s %-26s %-36s %-24s %s" % (marks, v.run.id, v.run.branch, v.phrase(), v.pane or "-"))
+            print("    %-2s %-26s %-36s %-24s %s" % (marks, v.run.id, v.run.branch, v.said(), v.pane or "-"))
 
 
 def main(argv=None):

@@ -47,6 +47,11 @@ RUNS_POLL_RANGE = (10.0, 300.0)
 RUNS_IDLE = 120.0
 RUNS_IDLE_RANGE = (30.0, 3600.0)
 NO_MISTAKES_TIMEOUT = 15.0
+# A remote machine's Runs page is read over ssh (ssh.py): connecting gives
+# up after REMOTE_CONNECT seconds, a whole call after REMOTE_TIMEOUT, and
+# the machine's firstmate reader (about 3 s) after FIRSTMATE_TIMEOUT.
+REMOTE_CONNECT = 4
+REMOTE_TIMEOUT = 12.0
 # Waiting for the touch bar's daemon when it is not running.
 RECONNECT = 5.0
 
@@ -109,6 +114,15 @@ def socket_path():
         return screenpad_app.socket_path()
     except screenpad_app.TouchbarError as e:
         raise AgentsError(str(e))
+
+
+def ssh_control_path():
+    """Where ssh keeps the one connection a poll's calls share (the user's
+    runtime directory), or None without one: each call then connects."""
+    base = os.environ.get("XDG_RUNTIME_DIR")
+    if not base or not os.path.isabs(base) or "%" in base:
+        return None
+    return os.path.join(base, "screenpad-agents-ssh-%C")
 
 
 def icon(name):
